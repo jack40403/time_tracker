@@ -80,8 +80,12 @@ class CategoryColorNotifier extends Notifier<Map<String, Color>> {
       newState.remove(oldCat);
       newState[newCat] = color;
       
+      // Update both hidden category lists
+      ref.read(hiddenCategoriesProvider.notifier).unhideCategory(oldCat);
       ref.read(hiddenCategoriesProvider.notifier).unhideCategory(newCat);
-      ref.read(hiddenCategoriesProvider.notifier).removePermanently(oldCat);
+      
+      ref.read(timerHiddenCategoriesProvider.notifier).unhideCategory(oldCat);
+      ref.read(timerHiddenCategoriesProvider.notifier).unhideCategory(newCat);
       
       state = newState;
       _save();
@@ -260,6 +264,54 @@ class HiddenCategoriesNotifier extends Notifier<Set<String>> {
   }
 }
 
+class TimerHiddenCategoriesNotifier extends Notifier<Set<String>> {
+  @override
+  Set<String> build() {
+    final storage = ref.read(storageServiceProvider);
+    final initial = storage.loadTimerHiddenCategories().toSet();
+    
+    // Sync from cloud settings if exists
+    ref.listen(cloudSettingsProvider, (previous, next) {
+      final cloudSettings = next.value;
+      if (cloudSettings != null && cloudSettings.containsKey('timer_hidden_categories')) {
+         final cloudHidden = (cloudSettings['timer_hidden_categories'] as List).cast<String>().toSet();
+         if (cloudHidden.length != state.length || !cloudHidden.every(state.contains)) {
+           state = cloudHidden;
+           storage.saveTimerHiddenCategories(state.toList());
+         }
+      }
+    });
+
+    return initial;
+  }
+
+  void hideCategory(String category) {
+    if (!state.contains(category)) {
+      state = {...state, category};
+      _save();
+    }
+  }
+
+  void unhideCategory(String category) {
+    if (state.contains(category)) {
+      final newState = Set<String>.from(state);
+      newState.remove(category);
+      state = newState;
+      _save();
+    }
+  }
+
+  void _save() {
+    final storage = ref.read(storageServiceProvider);
+    storage.saveTimerHiddenCategories(state.toList());
+    
+    final firestore = ref.read(firestoreServiceProvider);
+    if (firestore != null) {
+      firestore.updateSettings({'timer_hidden_categories': state.toList()});
+    }
+  }
+}
+
 final categoryColorProvider = NotifierProvider<CategoryColorNotifier, Map<String, Color>>(
   () => CategoryColorNotifier(),
 );
@@ -268,8 +320,20 @@ final hiddenCategoriesProvider = NotifierProvider<HiddenCategoriesNotifier, Set<
   () => HiddenCategoriesNotifier(),
 );
 
+final timerHiddenCategoriesProvider = NotifierProvider<TimerHiddenCategoriesNotifier, Set<String>>(
+  () => TimerHiddenCategoriesNotifier(),
+);
+
+// Global Visibility (used for Goals, Charts, etc.)
 final visibleCategoriesProvider = Provider<List<String>>((ref) {
   final all = ref.watch(categoryColorProvider).keys.toList();
   final hidden = ref.watch(hiddenCategoriesProvider);
   return all.where((c) => !hidden.contains(c)).toList();
+});
+
+// Timer-specific Visibility (used for Home Page Timer list)
+final timerVisibleCategoriesProvider = Provider<List<String>>((ref) {
+  final globalVisible = ref.watch(visibleCategoriesProvider);
+  final timerHidden = ref.watch(timerHiddenCategoriesProvider);
+  return globalVisible.where((c) => !timerHidden.contains(c)).toList();
 });

@@ -35,51 +35,78 @@ void showCategoryOptions(BuildContext context, String cat, WidgetRef ref) {
   showModalBottomSheet(
     context: context,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-    builder: (ctx) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 12),
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.withOpacity(0.3), borderRadius: BorderRadius.circular(2))),
-          const SizedBox(height: 16),
-          ListTile(
-            leading: const Icon(Icons.edit_outlined, color: Colors.blue),
-            title: const Text('重命名項目名稱', style: TextStyle(fontWeight: FontWeight.bold)),
-            onTap: () {
-              Navigator.pop(ctx);
-              showRenameDialog(context, cat, ref);
-            },
+    builder: (ctx) => Consumer(
+      builder: (ctx, ref, _) {
+        final isGlobalHidden = ref.watch(hiddenCategoriesProvider).contains(cat);
+        final isTimerHidden = ref.watch(timerHiddenCategoriesProvider).contains(cat);
+
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.withOpacity(0.3), borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.edit_outlined, color: Colors.blue),
+                title: const Text('重命名項目名稱', style: TextStyle(fontWeight: FontWeight.bold)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  showRenameDialog(context, cat, ref);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.palette_outlined, color: Colors.indigo),
+                title: const Text('更改項目識別顏色', style: TextStyle(fontWeight: FontWeight.bold)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  showColorPickerDialog(context, cat, ref);
+                },
+              ),
+              const Divider(height: 1),
+              SwitchListTile(
+                secondary: Icon(isTimerHidden ? Icons.timer_off_outlined : Icons.timer_outlined, color: Colors.orange),
+                title: const Text('計時器清單顯示', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('關閉後將不顯示在首頁，但保留目標與數據', style: TextStyle(fontSize: 12)),
+                value: !isTimerHidden,
+                onChanged: (bool value) {
+                   if (value) {
+                     ref.read(timerHiddenCategoriesProvider.notifier).unhideCategory(cat);
+                   } else {
+                     ref.read(timerHiddenCategoriesProvider.notifier).hideCategory(cat);
+                   }
+                },
+              ),
+              SwitchListTile(
+                secondary: Icon(isGlobalHidden ? Icons.archive : Icons.archive_outlined, color: Colors.blueGrey),
+                title: const Text('全域資料封存 (全球隱藏)', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('隱藏後將從目標與統計中完全撤下', style: TextStyle(fontSize: 12)),
+                value: !isGlobalHidden,
+                onChanged: (bool value) {
+                   if (value) {
+                     ref.read(hiddenCategoriesProvider.notifier).unhideCategory(cat);
+                   } else {
+                     ref.read(hiddenCategoriesProvider.notifier).hideCategory(cat);
+                     // If globally hidden, also hide from timer automatically for consistency
+                     ref.read(timerHiddenCategoriesProvider.notifier).hideCategory(cat);
+                   }
+                },
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.red),
+                title: Text('徹底刪除 "$cat"', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                subtitle: const Text('連同所有歷史紀錄一同刪除，不可復原', style: TextStyle(fontSize: 12, color: Colors.redAccent)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  showDeleteConfirmDialog(context, cat, ref);
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
           ),
-          ListTile(
-            leading: const Icon(Icons.palette_outlined, color: Colors.indigo),
-            title: const Text('更改項目識別顏色', style: TextStyle(fontWeight: FontWeight.bold)),
-            onTap: () {
-              Navigator.pop(ctx);
-              showColorPickerDialog(context, cat, ref);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.visibility_off_outlined, color: Colors.orange),
-            title: Text('從首頁隱藏 "$cat"', style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
-            subtitle: const Text('保留所有歷史專注數據，僅移除按鈕', style: TextStyle(fontSize: 12)),
-            onTap: () {
-              Navigator.pop(ctx);
-              ref.read(categoryColorProvider.notifier).deleteCategory(cat);
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ 已從首頁隱藏：$cat (可從設定復原)'), behavior: SnackBarBehavior.floating));
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.delete_outline, color: Colors.red),
-            title: Text('徹底刪除 "$cat"', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-            subtitle: const Text('連同所有歷史紀錄一同刪除，不可復原', style: TextStyle(fontSize: 12, color: Colors.redAccent)),
-            onTap: () {
-              Navigator.pop(ctx);
-              showDeleteConfirmDialog(context, cat, ref);
-            },
-          ),
-          const SizedBox(height: 16),
-        ],
-      ),
+        );
+      },
     ),
   );
 }

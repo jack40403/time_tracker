@@ -111,6 +111,7 @@ class StorageService {
   }
 
   static const String _hiddenCategoriesKey = 'hidden_categories';
+  static const String _timerHiddenCategoriesKey = 'timer_hidden_categories';
   static const String _lastUpdatedKey = 'last_updated_at';
 
   int loadLastUpdated() {
@@ -127,6 +128,14 @@ class StorageService {
 
   Future<void> saveHiddenCategories(List<String> categories) async {
     await _prefs.setStringList(_hiddenCategoriesKey, categories);
+  }
+
+  List<String> loadTimerHiddenCategories() {
+    return _prefs.getStringList(_timerHiddenCategoriesKey) ?? [];
+  }
+
+  Future<void> saveTimerHiddenCategories(List<String> categories) async {
+    await _prefs.setStringList(_timerHiddenCategoriesKey, categories);
   }
 
   Future<void> saveTimerState(Map<String, dynamic> state) async {

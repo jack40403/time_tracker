@@ -106,14 +106,14 @@ class HomePage extends ConsumerWidget {
                         physics: const NeverScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(24, 0, 24, 100),
                         children: [
-                          if (ref.watch(visibleCategoriesProvider).isEmpty)
+                          if (ref.watch(timerVisibleCategoriesProvider).isEmpty)
                             const Center(
                               child: Padding(
                                 padding: EdgeInsets.symmetric(vertical: 32),
                                 child: Text('尚未新增項目，請點擊下方開始', style: TextStyle(color: Colors.grey, fontSize: 13)),
                               ),
                             ),
-                          ...ref.watch(visibleCategoriesProvider).asMap().entries.map((entry) {
+                          ...ref.watch(timerVisibleCategoriesProvider).asMap().entries.map((entry) {
                             final i = entry.key;
                             final cat = entry.value;
                             return Padding(
@@ -197,7 +197,7 @@ class HomePage extends ConsumerWidget {
 
   Widget _buildCategoryList(BuildContext context, WidgetRef ref) {
     final timerState = ref.watch(timerProvider);
-    final visible = ref.watch(visibleCategoriesProvider);
+    final visible = ref.watch(timerVisibleCategoriesProvider);
     
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
