@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "216975115743",
+    "project_id": "wheredoesmytimego",
+    "storage_bucket": "wheredoesmytimego.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:216975115743:android:526c6b02ab14988e2cf06a",
+        "android_client_info": {
+          "package_name": "com.example.time_tracker"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "216975115743-cjioc0hn47o11bjnnrlqh3v5867nvgi5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.time_tracker",
+            "certificate_hash": "1e603fff99c5310b6dd262fd4b140b4ec4b8db52"
+          }
+        },
+        {
+          "client_id": "216975115743-5bt9sc1b265u7t1fsbm78p21skkb11mi.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCxVfOOkzhGhjtAbW0IJdDECrrYBIP-SJI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "216975115743-5bt9sc1b265u7t1fsbm78p21skkb11mi.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "216975115743-ghbdj03mduhvtfpk40k8s9uubq36a32j.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.timeTracker"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
