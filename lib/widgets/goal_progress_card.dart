@@ -77,15 +77,19 @@ class _GoalProgressCardState extends ConsumerState<GoalProgressCard> {
                 children: [
                    // Sophisticated Glassmorphism Toggle
                   // Manual Completion Toggle (Only for Tasks)
-                  if (goal.type == GoalType.task)
+                  if (goal.type == GoalType.task || goal.type == GoalType.binary)
                     Padding(
                       padding: const EdgeInsets.only(right: 8.0),
                       child: GestureDetector(
-                         onLongPress: () => _showManualCountDialog(context, ref),
+                         onLongPress: goal.type == GoalType.binary ? null : () => _showManualCountDialog(context, ref),
                          child: InkWell(
                           onTap: () {
-                            final current = goal.completionHistory[todayStr] ?? 0;
-                            ref.read(goalProvider.notifier).setManualValue(goal.id, DateTime.now(), (current as int) + 1);
+                            if (goal.type == GoalType.binary) {
+                              ref.read(goalProvider.notifier).toggleManualCompletion(goal.id, DateTime.now());
+                            } else {
+                              final current = goal.completionHistory[todayStr] ?? 0;
+                              ref.read(goalProvider.notifier).setManualValue(goal.id, DateTime.now(), (current as int) + 1);
+                            }
                           },
                           borderRadius: BorderRadius.circular(16),
                           child: AnimatedContainer(
@@ -106,7 +110,9 @@ class _GoalProgressCardState extends ConsumerState<GoalProgressCard> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  '今日進度: ${_formatTodayValue(goal.completionHistory[todayStr] ?? 0, goal.type)}',
+                                  goal.type == GoalType.binary 
+                                    ? (isTodayCompleted ? '今日已達成' : '今日待辦')
+                                    : '今日進度: ${_formatTodayValue(goal.completionHistory[todayStr] ?? 0, goal.type)}',
                                   style: GoogleFonts.outfit(
                                     fontSize: 14, 
                                     fontWeight: FontWeight.bold, 
@@ -115,7 +121,9 @@ class _GoalProgressCardState extends ConsumerState<GoalProgressCard> {
                                 ),
                                 const SizedBox(width: 8),
                                 Icon(
-                                  Icons.add_circle_outline,
+                                  goal.type == GoalType.binary 
+                                    ? (isTodayCompleted ? Icons.check_circle : Icons.circle_outlined)
+                                    : Icons.add_circle_outline,
                                   color: isAchieved ? Colors.green.shade700 : (catColor is MaterialColor ? (catColor as MaterialColor).shade700 : catColor),
                                   size: 20,
                                 ),
@@ -166,7 +174,11 @@ class _GoalProgressCardState extends ConsumerState<GoalProgressCard> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    goal.type == GoalType.task ? '目標: ${goal.targetSeconds} 單位' : '目標: ${ (goal.targetSeconds / 3600).floor() > 0 ? '${(goal.targetSeconds / 3600).floor()}h ' : ''}${((goal.targetSeconds % 3600) / 60).round()}m',
+                    goal.type == GoalType.binary 
+                      ? '目標: 點擊達成'
+                      : goal.type == GoalType.task 
+                        ? '目標: ${goal.targetSeconds} 單位' 
+                        : '目標: ${ (goal.targetSeconds / 3600).floor() > 0 ? '${(goal.targetSeconds / 3600).floor()}h ' : ''}${((goal.targetSeconds % 3600) / 60).round()}m',
                     style: TextStyle(color: Colors.grey.shade700, fontSize: 18, fontWeight: FontWeight.w600),
                   ),
                   if (averageText.isNotEmpty)

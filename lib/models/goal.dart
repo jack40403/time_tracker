@@ -2,12 +2,12 @@ import 'package:flutter/foundation.dart';
 
 enum GoalPeriod { daily, weekly, monthly, yearly }
 
-enum GoalType { time, task }
+enum GoalType { time, task, binary }
 
 class Goal {
   final String id;
   final String category;
-  final int targetSeconds; // For Time goals: seconds. For Task goals: target units/count.
+  final int targetSeconds; // For Time goals: seconds. For Count goals: target count. For Binary: 1.
   final GoalPeriod period;
   final GoalType type;
   final bool isActive;
@@ -72,12 +72,18 @@ class Goal {
   }
 
   factory Goal.fromJson(Map<String, dynamic> json) {
+    String typeStr = json['type'] as String? ?? 'time';
+    // Backwards compatibility: existing 'task' stays 'task' (count-based)
+    GoalType gType = GoalType.time;
+    if (typeStr == 'task') gType = GoalType.task;
+    else if (typeStr == 'binary') gType = GoalType.binary;
+
     return Goal(
       id: json['id'] as String,
       category: json['category'] as String,
       targetSeconds: json['targetSeconds'] as int,
       period: GoalPeriod.values.byName(json['period'] as String),
-      type: GoalType.values.byName(json['type'] as String? ?? 'time'),
+      type: gType,
       isActive: json['isActive'] as bool? ?? true,
       createdAt: DateTime.parse(json['createdAt'] as String),
       startDate: DateTime.parse(json['startDate'] as String? ?? json['createdAt'] as String),

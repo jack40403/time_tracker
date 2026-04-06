@@ -110,16 +110,26 @@ class GoalCalendarDialog extends ConsumerWidget {
                                   ),
                                 ),
                                 if (isCompleted) ...[
-                                  Text(
-                                    goal.type == GoalType.time 
-                                      ? '${(goal.completionHistory[dateStr]! / 60).round()}m'
-                                      : '${goal.completionHistory[dateStr]}x',
-                                    style: GoogleFonts.outfit(
-                                      fontWeight: FontWeight.w900,
-                                      color: Colors.white,
-                                      fontSize: 12 + ( (goal.completionHistory[dateStr]! / (goal.type == GoalType.time ? 60 : 1)).clamp(1, 100) / 10 ).clamp(0, 10),
+                                  if (goal.type == GoalType.binary)
+                                    const Padding(
+                                      padding: EdgeInsets.only(top: 2),
+                                      child: Icon(
+                                        Icons.check,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                    )
+                                  else
+                                    Text(
+                                      goal.type == GoalType.time 
+                                        ? '${(goal.completionHistory[dateStr]! / 60).round()}m'
+                                        : '${goal.completionHistory[dateStr]}x',
+                                      style: GoogleFonts.outfit(
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.white,
+                                        fontSize: 12 + ( (goal.completionHistory[dateStr]! / (goal.type == GoalType.time ? 60 : 1)).clamp(1, 100) / 10 ).clamp(0, 10),
+                                      ),
                                     ),
-                                  ),
                                 ],
                               ],
                             ),

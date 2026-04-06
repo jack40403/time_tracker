@@ -113,6 +113,9 @@ class GoalNotifier extends Notifier<List<Goal>> {
   }
 
   void addGoal(String category, int targetSeconds, GoalPeriod period, {GoalType type = GoalType.time, DateTime? startDate}) {
+    // BUG FIX: Ensure the category is visible when adding a new goal
+    ref.read(hiddenCategoriesProvider.notifier).unhideCategory(category);
+
     final initialGoal = Goal(
       id: const Uuid().v4(),
       category: category,
@@ -175,10 +178,18 @@ class GoalNotifier extends Notifier<List<Goal>> {
   Future<void> toggleManualCompletion(String id, DateTime date) async {
     final dateKey = _formatDate(date);
     state = state.map((g) {
-      if (g.id == id && g.type == GoalType.task) {
+      if (g.id == id && (g.type == GoalType.task || g.type == GoalType.binary)) {
         final history = Map<String, int>.from(g.completionHistory);
         final current = history[dateKey] ?? 0;
-        history[dateKey] = current > 0 ? 0 : 1;
+        
+        if (g.type == GoalType.binary) {
+          // Binary: toggle between 0 and 1
+          history[dateKey] = current > 0 ? 0 : 1;
+        } else {
+          // Task (count): increment by 1
+          history[dateKey] = current + 1;
+        }
+        
         return g.copyWith(completionHistory: history);
       }
       return g;
@@ -218,7 +229,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
 
   // Calculate progress for a specific goal at a specific date
   double getProgress(Goal goal, {DateTime? atDate}) {
-    if (goal.type == GoalType.task) {
+    if (goal.type == GoalType.task || goal.type == GoalType.binary) {
       return _getTaskProgress(goal, _getDaysInPeriod(goal.period, atDate ?? DateTime.now()));
     }
     

@@ -158,15 +158,38 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
               const SizedBox(height: 10),
               SizedBox(
                 width: double.infinity,
-                child: SegmentedButton<GoalType>(
+                child: SegmentedButton<String>(
                   segments: const [
-                    ButtonSegment(value: GoalType.time, label: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.timer_outlined, size: 20), SizedBox(width: 8), Text('時間型')])),
-                    ButtonSegment(value: GoalType.task, label: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.check_circle_outline, size: 20), SizedBox(width: 8), Text('任務型')])),
+                    ButtonSegment(value: 'time', label: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.timer_outlined, size: 20), SizedBox(width: 8), Text('時間型')])),
+                    ButtonSegment(value: 'task_base', label: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.task_alt, size: 20), SizedBox(width: 8), Text('任務型')])),
                   ],
-                  selected: {selectedType},
-                  onSelectionChanged: (val) => setModalState(() => selectedType = val.first),
+                  selected: {selectedType == GoalType.time ? 'time' : 'task_base'},
+                  onSelectionChanged: (val) {
+                    setModalState(() {
+                      if (val.first == 'time') {
+                        selectedType = GoalType.time;
+                      } else {
+                        // Default to binary when first clicking Task-based
+                        if (selectedType == GoalType.time) selectedType = GoalType.binary;
+                      }
+                    });
+                  },
                 ),
               ),
+              if (selectedType != GoalType.time) ...[
+                const SizedBox(height: 16),
+                Center(
+                  child: SegmentedButton<GoalType>(
+                    style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                    segments: const [
+                      ButtonSegment(value: GoalType.binary, label: Text('是非型 (Yes/No)', style: TextStyle(fontSize: 13))),
+                      ButtonSegment(value: GoalType.task, label: Text('次數型 (Counts)', style: TextStyle(fontSize: 13))),
+                    ],
+                    selected: {selectedType},
+                    onSelectionChanged: (val) => setModalState(() => selectedType = val.first),
+                  ),
+                ),
+              ],
               const SizedBox(height: 20),
 
               if (selectedType == GoalType.time) ...[
@@ -201,21 +224,40 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
                     ),
                   ],
                 ),
-              ] else ...[
-                 Text('目標單位/次數 (Target Units)', style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
+              ] else if (selectedType == GoalType.task) ...[
+                 Text('目標次數 (Target Counts)', style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
                  const SizedBox(height: 10),
                  TextField(
                     controller: hoursController, // Reusing hoursController for total units
                     keyboardType: TextInputType.number,
                     style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                     decoration: InputDecoration(
-                      labelText: '設定本週期的目標總量',
+                      labelText: '設定本週期的目標總次數',
                       hintText: '例如：5 (次)、10 (公里)...',
                       labelStyle: const TextStyle(fontSize: 16),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       prefixIcon: const Icon(Icons.numbers_outlined),
                     ),
                   ),
+              ] else ...[
+                // Binary (Yes/No)
+                 Text('目標設定 (Yes/No Goal)', style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
+                 const SizedBox(height: 10),
+                 Container(
+                   padding: const EdgeInsets.all(16),
+                   decoration: BoxDecoration(
+                     color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.1),
+                     borderRadius: BorderRadius.circular(12),
+                     border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.2)),
+                   ),
+                   child: Row(
+                     children: [
+                       Icon(Icons.info_outline, color: Theme.of(context).colorScheme.primary),
+                       const SizedBox(width: 12),
+                       const Expanded(child: Text('是非型目標只需在日曆中「勾選」即可達成，目標值固定為 1 次。')),
+                     ],
+                   ),
+                 ),
               ],
               const SizedBox(height: 20),
               Text('開始日期 (Start Date)', style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
@@ -298,9 +340,18 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
                 child: ElevatedButton(
                   onPressed: () async {
                     final isTask = selectedType == GoalType.task;
+                    final isBinary = selectedType == GoalType.binary;
                     final hrs = int.tryParse(hoursController.text) ?? 0;
                     final mins = int.tryParse(minutesController.text) ?? 0;
-                    final totalValue = isTask ? hrs : (hrs * 3600) + (mins * 60);
+                    
+                    int totalValue = 0;
+                    if (isBinary) {
+                      totalValue = 1;
+                    } else if (isTask) {
+                      totalValue = hrs;
+                    } else {
+                      totalValue = (hrs * 3600) + (mins * 60);
+                    }
                     
                     if (totalValue > 0) {
                       if (isEditing) {
