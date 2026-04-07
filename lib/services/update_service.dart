@@ -11,12 +11,14 @@ class UpdateInfo {
   final String? newVersion;
   final String? currentVersion;
   final bool isPatch; // True for Shorebird, false for Web/Full
+  final bool isReadyToRestart; // True if patch is downloaded and ready
 
   UpdateInfo({
     required this.isUpdateAvailable,
     this.newVersion,
     this.currentVersion,
     this.isPatch = false,
+    this.isReadyToRestart = false,
   });
 }
 
@@ -67,12 +69,21 @@ class UpdateService extends Notifier<UpdateInfo?> {
   Future<void> _checkShorebirdUpdate(String currentVersion) async {
     try {
       final status = await _shorebird.checkForUpdate();
-      if (status == UpdateStatus.restartRequired || status == UpdateStatus.outdated) {
+      if (status == UpdateStatus.restartRequired) {
         state = UpdateInfo(
           isUpdateAvailable: true,
-          newVersion: '新 Patch 已就緒', 
+          newVersion: 'Patch 已準備就緒', 
           currentVersion: currentVersion,
           isPatch: true,
+          isReadyToRestart: true,
+        );
+      } else if (status == UpdateStatus.outdated) {
+        state = UpdateInfo(
+          isUpdateAvailable: true,
+          newVersion: '發現新熱更新補丁', 
+          currentVersion: currentVersion,
+          isPatch: true,
+          isReadyToRestart: false,
         );
       }
     } catch (e) {
@@ -84,16 +95,22 @@ class UpdateService extends Notifier<UpdateInfo?> {
     if (state == null || !state!.isUpdateAvailable) return;
 
     if (state!.isPatch) {
-      // Mobile Shorebird update
+      if (state!.isReadyToRestart) {
+        // Handled by UI showing Restart button
+        return;
+      }
+      // Mobile Shorebird update download
+      debugPrint('UpdateService: Downloading Shorebird Patch...');
       await _shorebird.update();
-      // No automatic restart here, we will handle that in the UI
+      // Re-check after update to set isReadyToRestart
+      await checkUpdates();
     } else {
       // Web Update: Save new version to avoid infinite prompt and reload
       final prefs = await SharedPreferences.getInstance();
       if (state!.newVersion != null) {
         await prefs.setString(_localVersionKey, state!.newVersion!);
       }
-      // Trigger browser reload (handled by window.location.reload in UI or JS)
+      // UI will handle reload
     }
   }
 }

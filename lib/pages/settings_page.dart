@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io' if (dart.library.html) 'dart:html'; 
+import 'dart:html' as html if (dart.library.io) 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,6 +23,8 @@ import '../services/import_service.dart';
 import '../widgets/color_picker_dialog.dart';
 import '../widgets/category_dialogs.dart';
 import '../helpers/debug_helper.dart';
+import '../services/backup_service.dart'; // 新增
+import 'package:file_picker/file_picker.dart'; // 新增
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -479,36 +484,96 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
               child: Column(
                 children: [
-                  FutureBuilder<PackageInfo>(
-                    future: PackageInfo.fromPlatform(),
-                    builder: (context, snapshot) {
-                      final version = snapshot.data?.version ?? '1.0.0';
-                      final buildNumber = snapshot.data?.buildNumber ?? '1';
-                      return ListTile(
-                        leading: const Icon(Icons.info_outline, color: Colors.indigo),
-                        title: const Text('目前版本', style: TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('v$version (Build $buildNumber)'),
-                        trailing: OutlinedButton(
-                          onPressed: () async {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('🔍 正在檢查更新...'), duration: Duration(seconds: 1))
-                            );
-                            await ref.read(updateProvider.notifier).checkUpdates();
-                            final status = ref.read(updateProvider);
-                            if (mounted) {
-                              if (status != null && status.isUpdateAvailable) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('✨ 發現新版本！請查看通知進行更新'), backgroundColor: Colors.orange)
-                                );
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('✅ 目前已是最新版本'), backgroundColor: Colors.green)
-                                );
-                              }
-                            }
-                          },
-                          child: const Text('檢查更新'),
-                        ),
+                   Consumer(
+                    builder: (context, ref, _) {
+                      final updateInfo = ref.watch(updateProvider);
+                      return FutureBuilder<PackageInfo>(
+                        future: PackageInfo.fromPlatform(),
+                        builder: (context, snapshot) {
+                          final version = snapshot.data?.version ?? '1.0.0';
+                          final buildNumber = snapshot.data?.buildNumber ?? '1';
+                          
+                          return Column(
+                            children: [
+                              ListTile(
+                                leading: const Icon(Icons.info_outline, color: Colors.indigo),
+                                title: const Text('目前版本', style: TextStyle(fontWeight: FontWeight.bold)),
+                                subtitle: Text('v$version (Build $buildNumber)'),
+                                trailing: OutlinedButton(
+                                  onPressed: () async {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('🔍 正在檢查更新...'), duration: Duration(seconds: 1))
+                                    );
+                                    await ref.read(updateProvider.notifier).checkUpdates();
+                                    final status = ref.read(updateProvider);
+                                    if (mounted) {
+                                      if (status == null || !status.isUpdateAvailable) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('✅ 目前已是最新版本'), backgroundColor: Colors.green)
+                                        );
+                                      }
+                                    }
+                                  },
+                                  child: const Text('檢查更新'),
+                                ),
+                              ),
+                              if (updateInfo != null && updateInfo.isUpdateAvailable)
+                                Container(
+                                  margin: const EdgeInsets.all(12),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.stars, color: Colors.orange, size: 20),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              updateInfo.isPatch ? '發現新的熱更新補丁' : '發現新版本: ${updateInfo.newVersion}',
+                                              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 12),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: ElevatedButton.icon(
+                                          onPressed: () async {
+                                            if (kIsWeb) {
+                                              await ref.read(updateProvider.notifier).performUpdate();
+                                              html.window.location.reload(); 
+                                            } else if (updateInfo.isPatch) {
+                                              if (updateInfo.isReadyToRestart) {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  const SnackBar(content: Text('請手動重啟應用程式以套用更新'), backgroundColor: Colors.blue)
+                                                );
+                                              } else {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  const SnackBar(content: Text('📥 正在下載補丁...'), duration: Duration(seconds: 2))
+                                                );
+                                                await ref.read(updateProvider.notifier).performUpdate();
+                                              }
+                                            }
+                                          },
+                                          icon: Icon(updateInfo.isReadyToRestart ? Icons.refresh : Icons.download),
+                                          label: Text(
+                                            kIsWeb ? '立即重新整理' : (updateInfo.isReadyToRestart ? '已就緒 (請重啟)' : '立即下載安裝')
+                                          ),
+                                          style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
                       );
                     },
                   ),
@@ -530,6 +595,100 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
 
           const Divider(indent: 20, endIndent: 20),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
+            child: Row(
+              children: [
+                const Icon(Icons.storage_outlined, color: Colors.teal, size: 20),
+                const SizedBox(width: 8),
+                Text('資料管理與備份', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.teal)),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.teal.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.teal.withOpacity(0.2)),
+              ),
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.backup_outlined, color: Colors.teal),
+                    title: const Text('匯出完整備份 (JSON)', style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: const Text('包含分類、計時紀錄與目標設定', style: TextStyle(fontSize: 12)),
+                    onTap: () async {
+                      final backupService = ref.read(backupServiceProvider(ref));
+                      final json = backupService.createFullBackup();
+                      final date = DateTime.now().toIso8601String().split('T')[0];
+                      await saveAndShareFile(json, 'EliteTracker_Backup_$date.json');
+                      if (mounted) {
+                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 備份檔已產生並準備下載/分享')));
+                      }
+                    },
+                  ),
+                  const Divider(indent: 70, height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.restore_outlined, color: Colors.orange),
+                    title: const Text('匯入外部備份 (JSON)', style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: const Text('將會覆蓋目前的本地與雲端數據', style: TextStyle(fontSize: 12, color: Colors.redAccent)),
+                    onTap: () async {
+                       final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['json']);
+                       if (result != null) {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('⚠️ 確定要還原嗎？'),
+                              content: const Text('還原將會清除您目前的所有紀錄。建議在操作前先進行一次備份。'),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+                                ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('確認還原')),
+                              ],
+                            ),
+                          );
+
+                          if (confirm == true) {
+                             final file = result.files.first;
+                             String content;
+                             if (kIsWeb) {
+                               content = utf8.decode(file.bytes!);
+                             } else {
+                               content = await File(file.path!).readAsString();
+                             }
+
+                             final backupService = ref.read(backupServiceProvider(ref));
+                             final success = await backupService.restoreFromBackup(content);
+                             if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                  content: Text(success ? '✅ 資料已還原成功！' : '❌ 還原失敗，請檢查檔案格式'),
+                                  backgroundColor: success ? Colors.green : Colors.red,
+                                ));
+                             }
+                          }
+                       }
+                    },
+                  ),
+                  const Divider(indent: 70, height: 1),
+                   ListTile(
+                    leading: const Icon(Icons.table_chart_outlined, color: Colors.blue),
+                    title: const Text('匯出時段日誌 (CSV)', style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: const Text('產生人類可讀的計時細節表格', style: TextStyle(fontSize: 12)),
+                    onTap: () async {
+                      final backupService = ref.read(backupServiceProvider(ref));
+                      final csv = backupService.createSessionsCsv();
+                      final date = DateTime.now().toIso8601String().split('T')[0];
+                      await saveAndShareFile(csv, 'EliteTracker_History_$date.csv');
+                      if (mounted) {
+                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('📊 CSV 日誌已產生')));
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
           const Padding(
             padding: EdgeInsets.fromLTRB(20, 24, 20, 8),
             child: Text('客製化外觀', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue)),
