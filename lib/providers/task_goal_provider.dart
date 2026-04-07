@@ -71,10 +71,29 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
     await prefs.setString(_storageKey, jsonStr);
     
     if (syncToCloud) {
-      _lastMutationTime = DateTime.now().millisecondsSinceEpoch;
-      final firestore = ref.read(firestoreServiceProvider);
-      if (firestore != null) {
-        await firestore.saveTaskGoals(state);
+       _lastMutationTime = DateTime.now().millisecondsSinceEpoch;
+       final firestore = ref.read(firestoreServiceProvider);
+       if (firestore != null) {
+         // 回落備份：雖然有了單點同步，saveTaskGoals 仍保留作為全量保存手段
+         await firestore.saveTaskGoals(state);
+       }
+    }
+  }
+
+  void _saveSingleLocal(Goal goal, {bool isDelete = false}) async {
+    // 1. 本地全量存檔 (安全性備份)
+    final prefs = ref.read(storageServiceProvider).prefs;
+    final jsonStr = jsonEncode(state.map((e) => e.toJson()).toList());
+    await prefs.setString(_storageKey, jsonStr);
+
+    // 2. 雲端精確同步
+    _lastMutationTime = DateTime.now().millisecondsSinceEpoch;
+    final firestore = ref.read(firestoreServiceProvider);
+    if (firestore != null) {
+      if (isDelete) {
+        await firestore.deleteGoalById(goal.id, isTaskGoal: true);
+      } else {
+        await firestore.saveGoal(goal, isTaskGoal: true);
       }
     }
   }
@@ -110,20 +129,25 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
         changed = true;
       } else {
         final local = mergedMap[remote.id]!;
-        final Map<String, int> localHistory = Map<String, int>.from(local.completionHistory);
-        final Map<String, int> remoteHistory = remote.completionHistory;
-        bool historyChanged = false;
+        
+        // 衝突仲裁：雲端版本較新
+        if (remote.updatedAt.isAfter(local.updatedAt)) {
+          final Map<String, int> localHistory = Map<String, int>.from(local.completionHistory);
+          final Map<String, int> remoteHistory = remote.completionHistory;
+          bool historyChanged = false;
 
-        remoteHistory.forEach((date, remoteVal) {
-          final localVal = localHistory[date] ?? 0;
-          if (remoteVal > localVal) {
-            localHistory[date] = remoteVal;
-            historyChanged = true;
-          }
-        });
+          remoteHistory.forEach((date, remoteVal) {
+            final localVal = localHistory[date] ?? 0;
+            if (remoteVal > localVal) {
+              localHistory[date] = remoteVal;
+              historyChanged = true;
+            }
+          });
 
-        if (historyChanged) {
-          mergedMap[remote.id] = local.copyWith(completionHistory: localHistory);
+          mergedMap[remote.id] = remote.copyWith(
+            completionHistory: localHistory,
+            updatedAt: remote.updatedAt,
+          );
           changed = true;
         }
       }
@@ -142,13 +166,14 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
       category: category,
       targetSeconds: target,
       period: period,
-      type: type,
+      isActive: true,
       createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
       startDate: startDate ?? DateTime.now(),
       completionHistory: {},
     );
     state = [...state, newGoal];
-    _saveLocal();
+    _saveSingleLocal(newGoal);
   }
 
   void addRawGoal(Goal g) {
@@ -159,8 +184,9 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
   }
 
   void updateGoal(Goal updated) {
-    state = state.map((g) => g.id == updated.id ? updated : g).toList();
-    _saveLocal();
+    final withTimestamp = updated.copyWith(updatedAt: DateTime.now());
+    state = state.map((g) => g.id == withTimestamp.id ? withTimestamp : g).toList();
+    _saveSingleLocal(withTimestamp);
   }
 
   void forceMergeFromCloud(List<Goal> remoteGoals) {
@@ -168,16 +194,26 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
   }
 
   void deleteGoal(String id) {
+    final goal = state.firstWhere((g) => g.id == id, orElse: () => Goal(id: id, title: '', category: '', targetSeconds: 0, period: GoalPeriod.daily, createdAt: DateTime.now(), startDate: DateTime.now()));
     _addTombstones([id]);
     state = state.where((g) => g.id != id).toList();
-    _saveLocal();
+    _saveSingleLocal(goal, isDelete: true);
   }
 
   Future<void> deleteGoalsByCategory(String category) async {
-    final idsToRemove = state.where((g) => g.category == category).map((g) => g.id).toList();
+    final targets = state.where((g) => g.category == category).toList();
+    final idsToRemove = targets.map((g) => g.id).toList();
     _addTombstones(idsToRemove);
     state = state.where((g) => g.category != category).toList();
-    _saveLocal();
+
+    // 雲端單點批量刪除
+    final firestore = ref.read(firestoreServiceProvider);
+    if (firestore != null) {
+      for (var g in targets) {
+        await firestore.deleteGoalById(g.id, isTaskGoal: true);
+      }
+    }
+    _saveLocal(syncToCloud: false);
   }
 
   void _addTombstones(List<String> ids) {
@@ -194,28 +230,32 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
 
   void setManualValue(String id, DateTime date, int val) {
     final dateKey = _formatDate(date);
+    Goal? updatedGoal;
     state = state.map((g) {
       if (g.id == id) {
         final history = Map<String, int>.from(g.completionHistory);
         history[dateKey] = val;
-        return g.copyWith(completionHistory: history);
+        updatedGoal = g.copyWith(completionHistory: history, updatedAt: DateTime.now());
+        return updatedGoal!;
       }
       return g;
     }).toList();
-    _saveLocal();
+    if (updatedGoal != null) _saveSingleLocal(updatedGoal!);
   }
 
   void toggleManualCompletion(String id, DateTime date) {
     final dateKey = _formatDate(date);
+    Goal? updatedGoal;
     state = state.map((g) {
       if (g.id == id) {
         final history = Map<String, int>.from(g.completionHistory);
         history[dateKey] = (history[dateKey] ?? 0) > 0 ? 0 : 1;
-        return g.copyWith(completionHistory: history);
+        updatedGoal = g.copyWith(completionHistory: history, updatedAt: DateTime.now());
+        return updatedGoal!;
       }
       return g;
     }).toList();
-    _saveLocal();
+    if (updatedGoal != null) _saveSingleLocal(updatedGoal!);
   }
 
   double getProgress(Goal goal) {

@@ -13,6 +13,7 @@ class Goal {
   final GoalType type;
   final bool isActive;
   final DateTime createdAt;
+  final DateTime updatedAt;
   final DateTime startDate; 
   final Map<String, int> completionHistory; 
 
@@ -27,10 +28,11 @@ class Goal {
     this.type = GoalType.time,
     this.isActive = true,
     required this.createdAt,
+    DateTime? updatedAt,
     required this.startDate,
     this.completionHistory = const {},
     this.lastMilestone = 0,
-  });
+  }) : updatedAt = updatedAt ?? createdAt;
 
   Goal copyWith({
     String? id,
@@ -41,6 +43,7 @@ class Goal {
     GoalType? type,
     bool? isActive,
     DateTime? createdAt,
+    DateTime? updatedAt,
     DateTime? startDate,
     Map<String, int>? completionHistory,
     int? lastMilestone,
@@ -54,6 +57,7 @@ class Goal {
       type: type ?? this.type,
       isActive: isActive ?? this.isActive,
       createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
       startDate: startDate ?? this.startDate,
       completionHistory: completionHistory ?? this.completionHistory,
       lastMilestone: lastMilestone ?? this.lastMilestone,
@@ -70,6 +74,7 @@ class Goal {
       'type': type.name,
       'isActive': isActive,
       'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
       'startDate': startDate.toIso8601String(),
       'completionHistory': Map<String, int>.from(completionHistory),
       'lastMilestone': lastMilestone,
@@ -101,6 +106,7 @@ class Goal {
       type: gType,
       isActive: json['isActive'] as bool? ?? true,
       createdAt: DateTime.parse(createdAtStr),
+      updatedAt: DateTime.parse(json['updatedAt'] as String? ?? createdAtStr),
       startDate: DateTime.parse(startDateStr),
       completionHistory: (json['completionHistory'] as Map<String, dynamic>?)?.map((k, v) {
         // 自動正規化日期 Key：將所有 '/' 轉換為 '-' 確保相容性

@@ -199,8 +199,30 @@ class FirestoreService {
     return snap.docs.map((d) => d.data() as Map<String, dynamic>).toList();
   }
 
+  Future<void> saveGoal(dynamic goal, {bool isTaskGoal = false}) async {
+    final CollectionReference ref = isTaskGoal ? _taskGoalsRef : _goalsRef;
+    final Map<String, dynamic> data = goal is Map ? Map<String, dynamic>.from(goal) : goal.toJson();
+    final String id = data['id'];
+    debugPrint('FirestoreService: Saving single goal $id (isTaskGoal: $isTaskGoal)');
+    try {
+      await ref.doc(id).set(data);
+    } catch (e) {
+      debugPrint('FirestoreService Error saving single goal: $e');
+    }
+  }
+
+  Future<void> deleteGoalById(String id, {bool isTaskGoal = false}) async {
+    final CollectionReference ref = isTaskGoal ? _taskGoalsRef : _goalsRef;
+    debugPrint('FirestoreService: Deleting single goal $id (isTaskGoal: $isTaskGoal)');
+    try {
+      await ref.doc(id).delete();
+    } catch (e) {
+      debugPrint('FirestoreService Error deleting single goal: $e');
+    }
+  }
+
   Future<void> saveGoals(List<dynamic> goals) async {
-    debugPrint('FirestoreService: Saving ${goals.length} time goals');
+    debugPrint('FirestoreService: Bulk saving ${goals.length} time goals (Wiping old)');
     try {
       final batch = _db.batch();
       final existing = await _goalsRef.get();
