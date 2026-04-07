@@ -27,8 +27,7 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
       ref.listen(cloudTaskGoalsProvider, (previous, next) {
         if (next.hasValue) {
           final List<Goal> remote = next.value!.map((e) => Goal.fromJson(e)).toList();
-          final isFirst = previous == null || !previous.hasValue;
-          _syncWithCloud(remote, force: isFirst);
+          _syncWithCloud(remote);
         }
       });
 
@@ -36,7 +35,7 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
         final current = ref.read(cloudTaskGoalsProvider);
         if (current.hasValue && current.value!.isNotEmpty) {
           final remote = current.value!.map((e) => Goal.fromJson(e)).toList();
-          _syncWithCloud(remote, force: true);
+          _syncWithCloud(remote);
         }
       });
     }
@@ -65,29 +64,19 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
     return [];
   }
 
-  void _saveLocal({bool syncToCloud = true}) async {
+  void _saveLocal() async {
     final prefs = ref.read(storageServiceProvider).prefs;
     final jsonStr = jsonEncode(state.map((e) => e.toJson()).toList());
     await prefs.setString(_storageKey, jsonStr);
-    
-    if (syncToCloud) {
-       _lastMutationTime = DateTime.now().millisecondsSinceEpoch;
-       final firestore = ref.read(firestoreServiceProvider);
-       if (firestore != null) {
-         // 回落備份：雖然有了單點同步，saveTaskGoals 仍保留作為全量保存手段
-         await firestore.saveTaskGoals(state);
-       }
-    }
   }
 
   void _saveSingleLocal(Goal goal, {bool isDelete = false}) async {
-    // 1. 本地全量存檔 (安全性備份)
+    _lastMutationTime = DateTime.now().millisecondsSinceEpoch;
+
     final prefs = ref.read(storageServiceProvider).prefs;
     final jsonStr = jsonEncode(state.map((e) => e.toJson()).toList());
     await prefs.setString(_storageKey, jsonStr);
 
-    // 2. 雲端精確同步
-    _lastMutationTime = DateTime.now().millisecondsSinceEpoch;
     final firestore = ref.read(firestoreServiceProvider);
     if (firestore != null) {
       if (isDelete) {
@@ -98,10 +87,11 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
     }
   }
 
-  void _syncWithCloud(List<Goal> remoteGoals, {bool force = false}) {
+  void _syncWithCloud(List<Goal> remoteGoals) {
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (!force && (now - _lastMutationTime) < 3000) return;
+    if ((now - _lastMutationTime) < 3000) return;
 
+    final isFirstLoad = state.isEmpty;
     // 1. 過濾掉墓碑名單中的目標
     final List<Goal> filteredRemote = remoteGoals.where((r) => !_tombstones.contains(r.id)).toList();
 
@@ -114,9 +104,9 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
       storage.prefs.setString(_tombstoneKey, jsonEncode(_tombstones.toList()));
     }
 
-    if (state.isEmpty && filteredRemote.isNotEmpty) {
+    if (isFirstLoad && filteredRemote.isNotEmpty) {
       state = filteredRemote;
-      _saveLocal(syncToCloud: false);
+      _saveLocal();
       return;
     }
 
@@ -154,7 +144,7 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
     }
     if (changed) {
       state = mergedMap.values.toList();
-      _saveLocal(syncToCloud: false);
+      _saveLocal();
     }
   }
 
@@ -190,7 +180,8 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
   }
 
   void forceMergeFromCloud(List<Goal> remoteGoals) {
-    _syncWithCloud(remoteGoals, force: true);
+    _lastMutationTime = 0;
+    _syncWithCloud(remoteGoals);
   }
 
   void deleteGoal(String id) {
@@ -213,7 +204,7 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
         await firestore.deleteGoalById(g.id, isTaskGoal: true);
       }
     }
-    _saveLocal(syncToCloud: false);
+    _saveLocal();
   }
 
   void _addTombstones(List<String> ids) {
@@ -238,7 +229,7 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
         firestore.saveGoal(g, isTaskGoal: true);
       }
     }
-    _saveLocal(syncToCloud: false);
+    _saveLocal();
   }
 
   void setManualValue(String id, DateTime date, int val) {

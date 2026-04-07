@@ -29,8 +29,8 @@ class GoalNotifier extends Notifier<List<Goal>> {
       ref.listen(cloudGoalsProvider, (previous, next) {
         if (next.hasValue) {
           final List<Goal> remote = next.value!.map((e) => Goal.fromJson(e)).toList();
-          final isFirst = previous == null || !previous.hasValue;
-          _syncWithCloud(remote, force: isFirst);
+          // 修復：不再使用 isFirst 強制同步，避免刪除後的雲端回波將已刪除目標寫回
+          _syncWithCloud(remote);
         }
       });
 
@@ -38,7 +38,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
         final current = ref.read(cloudGoalsProvider);
         if (current.hasValue && current.value!.isNotEmpty) {
           final remote = current.value!.map((e) => Goal.fromJson(e)).toList();
-          _syncWithCloud(remote, force: true);
+          _syncWithCloud(remote);
         }
         _checkMilestones();
       });
@@ -69,29 +69,22 @@ class GoalNotifier extends Notifier<List<Goal>> {
     return [];
   }
 
-  void _saveLocal({bool syncToCloud = true}) async {
+  void _saveLocal() async {
     final prefs = ref.read(storageServiceProvider).prefs;
     final jsonStr = jsonEncode(state.map((e) => e.toJson()).toList());
     await prefs.setString(_storageKey, jsonStr);
-    
-    if (syncToCloud) {
-       _lastMutationTime = DateTime.now().millisecondsSinceEpoch;
-       final firestore = ref.read(firestoreServiceProvider);
-       if (firestore != null) {
-         // 使用 bulk save 作為保險，但一般情況應使用 _saveSingleLocal
-         await firestore.saveGoals(state);
-       }
-    }
   }
 
   void _saveSingleLocal(Goal goal, {bool isDelete = false}) async {
-    // 1. 本地全量存檔 (以防萬一)
+    // 「同步」設定 mutation 時間戳 — 不等 async 完成，節流立即生效
+    _lastMutationTime = DateTime.now().millisecondsSinceEpoch;
+
+    // 1. 本地存檔
     final prefs = ref.read(storageServiceProvider).prefs;
     final jsonStr = jsonEncode(state.map((e) => e.toJson()).toList());
     await prefs.setString(_storageKey, jsonStr);
 
     // 2. 雲端單點同步
-    _lastMutationTime = DateTime.now().millisecondsSinceEpoch;
     final firestore = ref.read(firestoreServiceProvider);
     if (firestore != null) {
       if (isDelete) {
@@ -122,7 +115,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
     // 沒有本地數據時直接用雲端數據
     if (state.isEmpty && filteredRemote.isNotEmpty) {
       state = filteredRemote;
-      _saveLocal(syncToCloud: false);
+      _saveLocal();
       return;
     }
 
@@ -159,7 +152,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
     }
     if (changed) {
       state = mergedMap.values.toList();
-      _saveLocal(syncToCloud: false);
+      _saveLocal();
     }
   }
 
@@ -183,7 +176,8 @@ class GoalNotifier extends Notifier<List<Goal>> {
   }
 
   void forceMergeFromCloud(List<Goal> remoteGoals) {
-    _syncWithCloud(remoteGoals, force: true);
+    _lastMutationTime = 0;
+    _syncWithCloud(remoteGoals);
   }
 
   void deleteGoal(String id) {
@@ -206,7 +200,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
         await firestore.deleteGoalById(g.id, isTaskGoal: false);
       }
     }
-    _saveLocal(syncToCloud: false);
+    _saveLocal();
   }
 
   void clearAllGoals() {
@@ -220,7 +214,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
         firestore.deleteGoalById(g.id, isTaskGoal: false);
       }
     }
-    _saveLocal(syncToCloud: false);
+    _saveLocal();
   }
 
   void _addTombstones(List<String> ids) {
@@ -245,7 +239,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
         firestore.saveGoal(g, isTaskGoal: false);
       }
     }
-    _saveLocal(syncToCloud: false);
+    _saveLocal();
   }
 
   void updateGoal(Goal updated) {
@@ -350,7 +344,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
     if (hasChanged) {
       state = newList;
       // 不推送雲端：milestone 只是本地結果累積，不應該触發全量上傳（防止已刪除目標被復活）
-      _saveLocal(syncToCloud: false);
+      _saveLocal();
     }
   }
 
