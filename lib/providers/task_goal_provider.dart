@@ -224,8 +224,21 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
   }
 
   void renameCategory(String oldCat, String newCat) {
-    state = state.map((g) => g.category == oldCat ? g.copyWith(category: newCat) : g).toList();
-    _saveLocal();
+    final updated = state.map((g) {
+      if (g.category == oldCat) {
+        return g.copyWith(category: newCat, updatedAt: DateTime.now());
+      }
+      return g;
+    }).toList();
+    state = updated;
+    // 逐一更新，避免全量覆蓋
+    final firestore = ref.read(firestoreServiceProvider);
+    if (firestore != null) {
+      for (var g in updated.where((g) => g.category == newCat)) {
+        firestore.saveGoal(g, isTaskGoal: true);
+      }
+    }
+    _saveLocal(syncToCloud: false);
   }
 
   void setManualValue(String id, DateTime date, int val) {

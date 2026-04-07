@@ -4,12 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../models/goal.dart';
-import '../models/time_session.dart';
 import 'storage_provider.dart';
 import 'firestore_provider.dart';
 import 'session_provider.dart';
 import 'category_provider.dart';
-import 'task_goal_provider.dart';
 
 class GoalNotifier extends Notifier<List<Goal>> {
   static const _storageKey = 'goals_time_v4';
@@ -143,13 +141,11 @@ class GoalNotifier extends Notifier<List<Goal>> {
           // 深度合併 completionHistory
           final Map<String, int> localHistory = Map<String, int>.from(local.completionHistory);
           final Map<String, int> remoteHistory = remote.completionHistory;
-          bool historyChanged = false;
 
           remoteHistory.forEach((date, remoteVal) {
             final localVal = localHistory[date] ?? 0;
             if (remoteVal > localVal) {
               localHistory[date] = remoteVal;
-              historyChanged = true;
             }
           });
 
@@ -235,8 +231,21 @@ class GoalNotifier extends Notifier<List<Goal>> {
   }
 
   void renameCategory(String oldCat, String newCat) {
-    state = state.map((g) => g.category == oldCat ? g.copyWith(category: newCat) : g).toList();
-    _saveLocal();
+    final updated = state.map((g) {
+      if (g.category == oldCat) {
+        return g.copyWith(category: newCat, updatedAt: DateTime.now());
+      }
+      return g;
+    }).toList();
+    state = updated;
+    // 逐一更新各目標，避免全量覆蓋
+    final firestore = ref.read(firestoreServiceProvider);
+    if (firestore != null) {
+      for (var g in updated.where((g) => g.category == newCat)) {
+        firestore.saveGoal(g, isTaskGoal: false);
+      }
+    }
+    _saveLocal(syncToCloud: false);
   }
 
   void updateGoal(Goal updated) {
@@ -262,6 +271,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
   }
 
   void recalculateHistoryFromSessions(String goalId) {
+    Goal? updated;
     state = state.map((goal) {
       if (goal.id == goalId) {
         final sessions = ref.read(sessionsProvider);
@@ -270,18 +280,18 @@ class GoalNotifier extends Notifier<List<Goal>> {
         for (var s in sessions) {
           if (s.category == goal.category) {
             final d = s.date.toLocal();
-            // 僅統計起始日期之後的數據
             if (d.isBefore(goal.startDate.subtract(const Duration(seconds: 1)))) continue;
-            
             final String dateKey = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
             newHistory[dateKey] = (newHistory[dateKey] ?? 0) + s.durationSeconds;
           }
         }
-        return goal.copyWith(completionHistory: newHistory);
+        updated = goal.copyWith(completionHistory: newHistory, updatedAt: DateTime.now());
+        return updated!;
       }
       return goal;
     }).toList();
-    _saveLocal();
+    // 單點更新，不再全量推送
+    if (updated != null) _saveSingleLocal(updated!);
   }
 
   double getProgress(Goal goal, {DateTime? atDate}) {
@@ -339,7 +349,8 @@ class GoalNotifier extends Notifier<List<Goal>> {
 
     if (hasChanged) {
       state = newList;
-      _saveLocal();
+      // 不推送雲端：milestone 只是本地結果累積，不應該触發全量上傳（防止已刪除目標被復活）
+      _saveLocal(syncToCloud: false);
     }
   }
 
@@ -369,7 +380,6 @@ class GoalNotifier extends Notifier<List<Goal>> {
     if (sortedDates.isEmpty) return {'historical': '0 天連續', 'monthly': '0 天連續', 'historical_date': '', 'monthly_date': ''};
 
     final now = DateTime.now();
-    final todayStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     final monthPrefix = '${now.year}-${now.month.toString().padLeft(2, '0')}';
 
     // 取得起始日（或是最早有紀錄的那天）
