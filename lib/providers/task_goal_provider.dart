@@ -156,6 +156,7 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
       category: category,
       targetSeconds: target,
       period: period,
+      type: type, // 關鍵修正：傳遞正確的類型
       isActive: true,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),

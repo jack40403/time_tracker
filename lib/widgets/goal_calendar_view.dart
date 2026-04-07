@@ -45,7 +45,17 @@ class _GoalCalendarViewState extends State<GoalCalendarView> {
   Widget build(BuildContext context) {
     return Consumer(
       builder: (ctx, ref, _) {
-        final catColor = ref.watch(categoryColorProvider)[widget.goal.category] ?? Colors.blue;
+        // 關鍵修正：從 Provider 中監聽最新的目標數據，而不是依賴外部傳入的靜態 Snapshot
+        final Goal currentGoal;
+        if (widget.goal.type == GoalType.time) {
+          final goals = ref.watch(goalProvider);
+          currentGoal = goals.firstWhere((g) => g.id == widget.goal.id, orElse: () => widget.goal);
+        } else {
+          final taskGoals = ref.watch(taskGoalProvider);
+          currentGoal = taskGoals.firstWhere((g) => g.id == widget.goal.id, orElse: () => widget.goal);
+        }
+
+        final catColor = ref.watch(categoryColorProvider)[currentGoal.category] ?? Colors.blue;
         final now = DateTime.now();
         final firstDayOfMonth = _viewMonth;
         final lastDayOfMonth = DateTime(_viewMonth.year, _viewMonth.month + 1, 0);
@@ -90,22 +100,22 @@ class _GoalCalendarViewState extends State<GoalCalendarView> {
 
                     final date = DateTime(_viewMonth.year, _viewMonth.month, dayIdx);
                     final dateKey = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-                    final val = widget.goal.completionHistory[dateKey] ?? 0;
+                    // 使用當前從 Provider 獲取的目標數據
+                    final val = currentGoal.completionHistory[dateKey] ?? 0;
                     final bool isToday = date.day == now.day && date.month == now.month && date.year == now.year;
                     
                     bool isSuccess = false;
-                    if (widget.goal.type == GoalType.binary) {
+                    if (currentGoal.type == GoalType.binary) {
                       isSuccess = val >= 1;
                     } else {
-                      isSuccess = val >= widget.goal.targetSeconds;
+                      isSuccess = val >= currentGoal.targetSeconds;
                     }
 
                     Color cellColor = Colors.grey.withOpacity(0.07);
                     if (val > 0) {
-                      if (widget.goal.type == GoalType.time) {
-                        // 綠色 = 達成，紅色 = 有記錄但未達成
+                      if (currentGoal.type == GoalType.time) {
                         cellColor = isSuccess 
-                            ? Colors.green.withOpacity((val / widget.goal.targetSeconds).clamp(0.5, 1.0))
+                            ? Colors.green.withOpacity((val / currentGoal.targetSeconds).clamp(0.5, 1.0))
                             : Colors.red.withOpacity(0.55);
                       } else {
                         cellColor = isSuccess ? Colors.green.withOpacity(0.7) : Colors.red.withOpacity(0.55);
@@ -124,14 +134,14 @@ class _GoalCalendarViewState extends State<GoalCalendarView> {
                             side: isToday ? BorderSide(color: catColor, width: 2) : BorderSide.none,
                           ),
                           child: InkWell(
-                            onTap: widget.goal.type == GoalType.time 
+                            onTap: currentGoal.type == GoalType.time 
                                 ? null  // 時間型禁止手動編輯
                                 : () {
                                     HapticFeedback.mediumImpact();
-                                    if (widget.goal.type == GoalType.binary) {
-                                      ref.read(taskGoalProvider.notifier).toggleManualCompletion(widget.goal.id, date);
+                                    if (currentGoal.type == GoalType.binary) {
+                                      ref.read(taskGoalProvider.notifier).toggleManualCompletion(currentGoal.id, date);
                                     } else {
-                                      _showEditValueDialog(context, ref, date, val);
+                                      _showEditValueDialog(context, ref, date, val, currentGoal);
                                     }
                                   },
                             child: SizedBox(
@@ -148,11 +158,11 @@ class _GoalCalendarViewState extends State<GoalCalendarView> {
                                   Center(
                                     child: IgnorePointer(
                                       child: Text(
-                                        _formatVal(val, widget.goal.type),
+                                        _formatVal(val, currentGoal.type),
                                         style: GoogleFonts.shareTechMono(
-                                          fontSize: widget.goal.type == GoalType.time ? 13 : 18,
+                                          fontSize: currentGoal.type == GoalType.time ? 13 : 18,
                                           fontWeight: FontWeight.bold,
-                                          color: val > 0 ? (widget.goal.type == GoalType.time ? Colors.black87 : Colors.white) : Colors.grey.shade400,
+                                          color: val > 0 ? (currentGoal.type == GoalType.time ? Colors.black87 : Colors.white) : Colors.grey.shade400,
                                         ),
                                       ),
                                     ),
@@ -173,8 +183,8 @@ class _GoalCalendarViewState extends State<GoalCalendarView> {
     );
   }
 
-  void _showEditValueDialog(BuildContext context, WidgetRef ref, DateTime date, int currentVal) {
-    final controller = TextEditingController(text: widget.goal.type == GoalType.time ? (currentVal ~/ 60).toString() : currentVal.toString());
+  void _showEditValueDialog(BuildContext context, WidgetRef ref, DateTime date, int currentVal, Goal latestGoal) {
+    final controller = TextEditingController(text: latestGoal.type == GoalType.time ? (currentVal ~/ 60).toString() : currentVal.toString());
     final dateStr = '${date.year}/${date.month}/${date.day}';
 
     showDialog(
@@ -184,14 +194,14 @@ class _GoalCalendarViewState extends State<GoalCalendarView> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (widget.goal.type == GoalType.binary)
+            if (latestGoal.type == GoalType.binary)
               const Text('點擊下方按鈕切換達成狀態：')
             else
               TextField(
                 controller: controller,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
-                  labelText: widget.goal.type == GoalType.time ? '輸入分鐘數' : '輸入完成單位',
+                  labelText: latestGoal.type == GoalType.time ? '輸入分鐘數' : '輸入完成單位',
                   border: const OutlineInputBorder(),
                 ),
               ),
@@ -199,10 +209,10 @@ class _GoalCalendarViewState extends State<GoalCalendarView> {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          if (widget.goal.type == GoalType.binary)
+          if (latestGoal.type == GoalType.binary)
              ElevatedButton(
                onPressed: () {
-                 ref.read(taskGoalProvider.notifier).toggleManualCompletion(widget.goal.id, date);
+                 ref.read(taskGoalProvider.notifier).toggleManualCompletion(latestGoal.id, date);
                  Navigator.pop(ctx);
                },
                child: Text(currentVal > 0 ? '標記為未達成' : '標記為已達成'),
@@ -211,11 +221,11 @@ class _GoalCalendarViewState extends State<GoalCalendarView> {
             ElevatedButton(
               onPressed: () {
                 final input = int.tryParse(controller.text) ?? 0;
-                final finalVal = widget.goal.type == GoalType.time ? input * 60 : input;
-                if (widget.goal.type == GoalType.time) {
-                  ref.read(goalProvider.notifier).setManualValue(widget.goal.id, date, finalVal);
+                final finalVal = latestGoal.type == GoalType.time ? input * 60 : input;
+                if (latestGoal.type == GoalType.time) {
+                  ref.read(goalProvider.notifier).setManualValue(latestGoal.id, date, finalVal);
                 } else {
-                  ref.read(taskGoalProvider.notifier).setManualValue(widget.goal.id, date, finalVal);
+                  ref.read(taskGoalProvider.notifier).setManualValue(latestGoal.id, date, finalVal);
                 }
                 Navigator.pop(ctx);
               },

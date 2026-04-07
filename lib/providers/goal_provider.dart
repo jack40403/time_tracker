@@ -164,6 +164,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
       category: category,
       targetSeconds: targetSeconds,
       period: period,
+      type: type, // 修正：傳遞正確類型
       isActive: true,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
