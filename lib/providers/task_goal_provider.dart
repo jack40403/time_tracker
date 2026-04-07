@@ -215,6 +215,11 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
     storage.prefs.setString(_tombstoneKey, jsonEncode(_tombstones.toList()));
   }
 
+  void resetState() {
+    state = [];
+    _tombstones.clear();
+  }
+
   void renameCategory(String oldCat, String newCat) {
     final updated = state.map((g) {
       if (g.category == oldCat) {

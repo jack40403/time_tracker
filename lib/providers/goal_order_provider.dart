@@ -32,6 +32,10 @@ class GoalOrderNotifier extends Notifier<List<String>> {
     state = updated;
     ref.read(storageServiceProvider).prefs.setString(_key, jsonEncode(updated));
   }
+
+  void resetState() {
+    state = [];
+  }
 }
 
 final goalOrderProvider = NotifierProvider<GoalOrderNotifier, List<String>>(() => GoalOrderNotifier());

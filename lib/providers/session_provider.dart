@@ -127,6 +127,10 @@ class SessionsNotifier extends Notifier<List<TimeSession>> {
     }
   }
 
+  void resetState() {
+    state = [];
+  }
+
   List<TimeSession> _generateDefaultSessions(DateTime now) {
     final initial = [
       TimeSession(category: '閱讀 📚', durationSeconds: 3600, date: now.subtract(const Duration(hours: 2))),

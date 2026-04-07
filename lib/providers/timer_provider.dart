@@ -300,6 +300,11 @@ class TimerNotifier extends Notifier<TimerState> {
     _pushToCloud();
   }
 
+  void resetState() {
+    _timer?.cancel();
+    state = const TimerState();
+  }
+
   void handleCategoryRename(String oldCat, String newCat) {
     if (state.category == oldCat) {
       state = state.copyWith(category: newCat);

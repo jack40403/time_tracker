@@ -265,4 +265,34 @@ class FirestoreService {
       debugPrint('FirestoreService Error saving task goals: $e');
     }
   }
+
+  // --- Master Reset ---
+  Future<void> clearAllUserData() async {
+    debugPrint('FirestoreService: STARTING MASTER RESET for user $userId');
+    try {
+      final batch = _db.batch();
+
+      // 1. Delete all sessions
+      final sessions = await _sessionsRef.get();
+      for (var doc in sessions.docs) batch.delete(doc.reference);
+
+      // 2. Delete all goals
+      final goals = await _goalsRef.get();
+      for (var doc in goals.docs) batch.delete(doc.reference);
+
+      // 3. Delete all task goals
+      final taskGoals = await _taskGoalsRef.get();
+      for (var doc in taskGoals.docs) batch.delete(doc.reference);
+
+      // 4. Delete settings
+      batch.delete(_settingsRef);
+      batch.delete(_db.collection('users').doc(userId).collection('settings').doc('timer_state'));
+
+      await batch.commit();
+      debugPrint('FirestoreService: MASTER RESET COMPLETE');
+    } catch (e) {
+      debugPrint('FirestoreService: Error during master reset: $e');
+      throw e;
+    }
+  }
 }

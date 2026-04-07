@@ -150,4 +150,10 @@ class StorageService {
   Future<void> saveLayoutMode(int index) async {
     await _prefs.setInt(_layoutModeKey, index);
   }
+
+  // --- Master Reset ---
+  Future<void> clearAllLocalData() async {
+    debugPrint('StorageService: CLEARING ALL LOCAL DATA');
+    await _prefs.clear();
+  }
 }

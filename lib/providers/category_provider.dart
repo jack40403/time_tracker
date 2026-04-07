@@ -169,9 +169,9 @@ class CategoryColorNotifier extends Notifier<Map<String, Color>> {
     }
   }
 
-  void resetToTrueZero() {
-    state = {};
-    _save();
+  void resetState() {
+    state = Map.from(defaultCategoryColors);
+    _lastLocalUpdateTime = DateTime.now().millisecondsSinceEpoch;
   }
 
   void ensureCategoriesExist(List<String> names) {
@@ -297,9 +297,8 @@ class HiddenCategoriesNotifier extends Notifier<Set<String>> {
     unhideCategory(category);
   }
 
-  void clearAll() {
+  void resetState() {
     state = {};
-    _save();
   }
 
   void _save() {
@@ -350,6 +349,10 @@ class TimerHiddenCategoriesNotifier extends Notifier<Set<String>> {
     }
   }
 
+  void resetState() {
+    state = {};
+  }
+
   void _save() {
     final storage = ref.read(storageServiceProvider);
     storage.saveTimerHiddenCategories(state.toList());
@@ -397,6 +400,10 @@ class GoalsHiddenCategoriesNotifier extends Notifier<Set<String>> {
       state = newState;
       _save();
     }
+  }
+
+  void resetState() {
+    state = {};
   }
 
   void _save() {

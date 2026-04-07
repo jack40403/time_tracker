@@ -8,6 +8,8 @@ import '../providers/theme_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/goal_provider.dart';
+import '../providers/task_goal_provider.dart'; // 新增
+import '../providers/goal_order_provider.dart'; // 新增
 import '../providers/session_provider.dart';
 import '../providers/background_provider.dart';
 import '../providers/firestore_provider.dart';
@@ -185,10 +187,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               
               // 執行全量歸零
               await ref.read(sessionsProvider.notifier).clearAll();
-              ref.read(categoryColorProvider.notifier).resetToTrueZero();
-              ref.read(hiddenCategoriesProvider.notifier).clearAll();
-              ref.read(goalProvider.notifier).clearAllGoals();
-              ref.read(timerProvider.notifier).resetTimer();
+              ref.read(categoryColorProvider.notifier).resetState();
+              ref.read(hiddenCategoriesProvider.notifier).resetState();
+              ref.read(goalProvider.notifier).resetState();
+              ref.read(timerProvider.notifier).resetState();
               ref.read(timerColorProvider.notifier).resetToDefault();
               ref.read(backgroundProvider.notifier).reset();
               ref.read(themeModeProvider.notifier).resetToDefault();
@@ -892,9 +894,146 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
             ),
           ),
-          const SizedBox(height: 48),
+          const Divider(indent: 20, endIndent: 20),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
+            child: Text('危險區域', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red)),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.red.withOpacity(0.2)),
+              ),
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.delete_forever, color: Colors.red),
+                    title: const Text('重置所有數據 (歸零)', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
+                    subtitle: const Text('刪除所有歷史記錄、目標、分類與雲端數據', style: TextStyle(fontSize: 12)),
+                    onTap: () => _showResetConfirmation(context, ref),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 64),
         ],
       ),
     );
+  }
+
+  void _showResetConfirmation(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('⚠️ 確定要重置所有數據嗎？'),
+        content: const Text('這將永久刪除雲端與本地的所有時段記錄、目標設定以及自定義分類，此操作不可撤銷。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showFinalResetGuard(context, ref);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text('下一步'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showFinalResetGuard(BuildContext context, WidgetRef ref) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('請再次確認'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('請在下方輸入 "RESET" 以確認執行歸零重置：'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                hintText: 'RESET',
+                border: OutlineInputBorder(),
+              ),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          ElevatedButton(
+            onPressed: () async {
+              if (controller.text.trim().toUpperCase() == 'RESET') {
+                Navigator.pop(ctx);
+                await _performMasterReset(context, ref);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('輸入錯誤，操作取消')));
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text('執行歸零重置'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _performMasterReset(BuildContext context, WidgetRef ref) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      // 1. Wipe Cloud
+      final firestore = ref.read(firestoreServiceProvider);
+      if (firestore != null) {
+        await firestore.clearAllUserData();
+      }
+
+      // 2. Wipe Local Storage
+      final storage = ref.read(storageServiceProvider);
+      await storage.clearAllLocalData();
+
+      // 3. Reset all memory states
+      ref.read(goalProvider.notifier).resetState();
+      ref.read(taskGoalProvider.notifier).resetState();
+      ref.read(sessionsProvider.notifier).resetState();
+      ref.read(categoryColorProvider.notifier).resetState();
+      ref.read(hiddenCategoriesProvider.notifier).resetState();
+      ref.read(timerHiddenCategoriesProvider.notifier).resetState();
+      ref.read(goalsHiddenCategoriesProvider.notifier).resetState();
+      ref.read(goalOrderProvider.notifier).resetState();
+      ref.read(timerProvider.notifier).resetState();
+
+      if (mounted) {
+        Navigator.pop(context); // Pop loading
+        Navigator.of(context).popUntil((route) => route.isFirst); // Go back home
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('✅ 數據已成功歸零，帳號清空完成'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Pop loading
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('❌ 重置失敗: $e'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    }
   }
 }
