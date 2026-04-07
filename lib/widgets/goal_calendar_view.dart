@@ -1,279 +1,226 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // 修正：移至頂部
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/goal.dart';
 import '../providers/goal_provider.dart';
+import '../providers/task_goal_provider.dart';
 import '../providers/category_provider.dart';
 
-class GoalCalendarView extends ConsumerStatefulWidget {
+class GoalCalendarView extends StatefulWidget {
   final Goal goal;
   const GoalCalendarView({super.key, required this.goal});
 
   @override
-  ConsumerState<GoalCalendarView> createState() => _GoalCalendarViewState();
+  State<GoalCalendarView> createState() => _GoalCalendarViewState();
 }
 
-class _GoalCalendarViewState extends ConsumerState<GoalCalendarView> {
-  DateTime _focusedMonth = DateTime.now();
+class _GoalCalendarViewState extends State<GoalCalendarView> {
+  late DateTime _viewMonth;
 
   @override
   void initState() {
     super.initState();
-    _focusedMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
+    _viewMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
   }
 
-  void _changeMonth(int offset) {
+  void _changeMonth(int delta) {
     setState(() {
-      _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month + offset, 1);
+      _viewMonth = DateTime(_viewMonth.year, _viewMonth.month + delta, 1);
     });
+  }
+
+  String _formatVal(int val, GoalType type) {
+    if (type == GoalType.time) {
+      if (val <= 0) return '-';
+      final h = val ~/ 3600;
+      final m = (val % 3600) ~/ 60;
+      if (h > 0) return '${h}h${m}m';
+      return '${m}m';
+    }
+    return val > 0 ? '✓' : '✗';
   }
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final firstDayOfMonth = DateTime(_focusedMonth.year, _focusedMonth.month, 1);
-    final lastDayOfMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0);
-    
-    final daysInMonth = lastDayOfMonth.day;
-    final startWeekday = firstDayOfMonth.weekday; // 1 (Mon) - 7 (Sun)
-    
-    final leadingEmptyCells = startWeekday - 1;
-    
-    final List<DateTime?> calendarCells = [];
-    for (int i = 0; i < leadingEmptyCells; i++) {
-        calendarCells.add(null);
-    }
-    for (int i = 1; i <= daysInMonth; i++) {
-        calendarCells.add(DateTime(_focusedMonth.year, _focusedMonth.month, i));
-    }
-    while (calendarCells.length < 42) {
-        calendarCells.add(null);
-    }
+    return Consumer(
+      builder: (ctx, ref, _) {
+        final catColor = ref.watch(categoryColorProvider)[widget.goal.category] ?? Colors.blue;
+        final now = DateTime.now();
+        final firstDayOfMonth = _viewMonth;
+        final lastDayOfMonth = DateTime(_viewMonth.year, _viewMonth.month + 1, 0);
+        
+        final int leadingDays = firstDayOfMonth.weekday - 1;
+        final totalCells = leadingDays + lastDayOfMonth.day;
+        final rows = (totalCells / 7).ceil();
 
-    final catColor = ref.watch(categoryColorProvider)[widget.goal.category] ?? Colors.blue;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '${_focusedMonth.year}年 ${_focusedMonth.month}月',
-              style: GoogleFonts.outfit(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.grey.shade900),
-            ),
             Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                IconButton(
-                  icon: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(color: Colors.grey.shade100, shape: BoxShape.circle),
-                    child: const Icon(Icons.chevron_left_rounded, size: 28),
-                  ),
-                  onPressed: () => _changeMonth(-1),
+                Row(
+                  children: [
+                    IconButton(icon: const Icon(Icons.chevron_left, size: 20), onPressed: () => _changeMonth(-1), constraints: const BoxConstraints(), padding: EdgeInsets.zero),
+                    const SizedBox(width: 8),
+                    Text('${_viewMonth.year}年 ${_viewMonth.month}月', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueGrey)),
+                    const SizedBox(width: 8),
+                    IconButton(icon: const Icon(Icons.chevron_right, size: 20), onPressed: () => _changeMonth(1), constraints: const BoxConstraints(), padding: EdgeInsets.zero),
+                  ],
                 ),
-                IconButton(
-                  icon: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(color: Colors.grey.shade100, shape: BoxShape.circle),
-                    child: const Icon(Icons.chevron_right_rounded, size: 28),
-                  ),
-                  onPressed: () => _changeMonth(1),
-                ),
+                Text('點擊格子可修改紀錄', style: TextStyle(fontSize: 10, color: catColor.withOpacity(0.8), fontWeight: FontWeight.bold)),
               ],
             ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        // Weekday Headers - Minimalist
-        Row(
-          children: ['一', '二', '三', '四', '五', '六', '日'].map((w) => Expanded(
-            child: Center(
-              child: Text(
-                w, 
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade400, fontWeight: FontWeight.bold, letterSpacing: 1.2)
-              ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: ['一', '二', '三', '四', '五', '六', '日'].map((w) => Expanded(child: Center(child: Text(w, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey))))).toList(),
             ),
-          )).toList(),
-        ),
-        const SizedBox(height: 12),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 7,
-            mainAxisSpacing: 6,
-            crossAxisSpacing: 6,
-            childAspectRatio: 1.0,
-          ),
-          itemCount: calendarCells.length,
-          itemBuilder: (context, index) {
-            final day = calendarCells[index];
-            if (day == null) return const SizedBox.shrink();
+            const SizedBox(height: 8),
+            for (int r = 0; r < rows; r++)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: List.generate(7, (c) {
+                    final dayIdx = r * 7 + c - leadingDays + 1;
+                    final bool isCurrentMonth = dayIdx >= 1 && dayIdx <= lastDayOfMonth.day;
+                    
+                    if (!isCurrentMonth) return const Expanded(child: SizedBox());
 
-             final dateStr = '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
-             final val = widget.goal.completionHistory[dateStr];
-             // Color reflects if goal achieved AS OF THIS DAY
-             final isCompleted = ref.read(goalProvider.notifier).getProgress(widget.goal, atDate: day) >= 1.0;
-            final isToday = day.year == now.year && day.month == now.month && day.day == now.day;
-            final isFuture = day.isAfter(now);
-            final isBeforeStart = day.isBefore(DateTime(widget.goal.startDate.year, widget.goal.startDate.month, widget.goal.startDate.day));
+                    final date = DateTime(_viewMonth.year, _viewMonth.month, dayIdx);
+                    final dateKey = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+                    final val = widget.goal.completionHistory[dateKey] ?? 0;
+                    final bool isToday = date.day == now.day && date.month == now.month && date.year == now.year;
+                    
+                    bool isSuccess = false;
+                    if (widget.goal.type == GoalType.binary) {
+                      isSuccess = val >= 1;
+                    } else {
+                      isSuccess = val >= widget.goal.targetSeconds;
+                    }
 
-            final statusColor = isCompleted ? const Color(0xFF2E7D32) : const Color(0xFFC62828);
-            final statusIcon = isCompleted ? Icons.check_rounded : Icons.close_rounded;
+                    Color cellColor = Colors.grey.withOpacity(0.07);
+                    if (val > 0) {
+                      if (widget.goal.type == GoalType.time) {
+                        // 綠色 = 達成，紅色 = 有記錄但未達成
+                        cellColor = isSuccess 
+                            ? Colors.green.withOpacity((val / widget.goal.targetSeconds).clamp(0.5, 1.0))
+                            : Colors.red.withOpacity(0.55);
+                      } else {
+                        cellColor = isSuccess ? Colors.green.withOpacity(0.7) : Colors.red.withOpacity(0.55);
+                      }
+                    }
 
-            return InkWell(
-              onTap: (isFuture || isBeforeStart) ? null : () {
-                if (widget.goal.type == GoalType.task) {
-                   _showManualCountDialog(context, ref, day);
-                } else {
-                   ref.read(goalProvider.notifier).toggleManualCompletion(widget.goal.id, day);
-                }
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  color: (isFuture || isBeforeStart) ? Colors.grey.shade100 : statusColor,
-                  border: isToday 
-                      ? Border.all(color: Colors.black, width: 2.5) 
-                      : null,
-                  boxShadow: [
-                    if (!isFuture && !isBeforeStart) BoxShadow(color: statusColor.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2)),
-                  ],
-                ),
-                child: Stack(
-                  children: [
-                    Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            '${day.day}', 
-                            style: GoogleFonts.outfit(
-                              fontSize: 26, 
-                              color: (isFuture || isBeforeStart) ? Colors.grey.shade300 : Colors.white,
-                              fontWeight: FontWeight.w900,
-                              shadows: [
-                                if (!isFuture && !isBeforeStart) const Shadow(color: Colors.black26, offset: Offset(0, 2), blurRadius: 3),
-                              ],
-                            )
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(1.5),
+                        child: Material(
+                          color: cellColor,
+                          borderRadius: BorderRadius.circular(8),
+                          clipBehavior: Clip.antiAlias,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            side: isToday ? BorderSide(color: catColor, width: 2) : BorderSide.none,
                           ),
-                          if (val != null && val > 0 && !isFuture && !isBeforeStart)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Text(
-                                  _formatValue(val, widget.goal.type),
-                                  style: GoogleFonts.outfit(
-                                    fontSize: _getRelativeFontSize(val, widget.goal),
-                                    color: Colors.white.withOpacity(0.95),
-                                    fontWeight: FontWeight.bold,
+                          child: InkWell(
+                            onTap: widget.goal.type == GoalType.time 
+                                ? null  // 時間型禁止手動編輯
+                                : () {
+                                    HapticFeedback.mediumImpact();
+                                    if (widget.goal.type == GoalType.binary) {
+                                      ref.read(taskGoalProvider.notifier).toggleManualCompletion(widget.goal.id, date);
+                                    } else {
+                                      _showEditValueDialog(context, ref, date, val);
+                                    }
+                                  },
+                            child: SizedBox(
+                              height: 52,
+                              child: Stack(
+                                children: [
+                                  Positioned(
+                                    top: 3, 
+                                    right: 4, 
+                                    child: IgnorePointer(
+                                      child: Text('$dayIdx', style: TextStyle(fontSize: 9, color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
+                                    ),
                                   ),
-                                ),
+                                  Center(
+                                    child: IgnorePointer(
+                                      child: Text(
+                                        _formatVal(val, widget.goal.type),
+                                        style: GoogleFonts.shareTechMono(
+                                          fontSize: widget.goal.type == GoalType.time ? 13 : 18,
+                                          fontWeight: FontWeight.bold,
+                                          color: val > 0 ? (widget.goal.type == GoalType.time ? Colors.black87 : Colors.white) : Colors.grey.shade400,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                        ],
-                      ),
-                    ),
-                    if (!isFuture && !isBeforeStart)
-                      Positioned(
-                        right: 4, bottom: 4,
-                        child: Container(
-                          padding: const EdgeInsets.all(2),
-                          decoration: const BoxDecoration(color: Colors.white24, shape: BoxShape.circle),
-                          child: Icon(statusIcon, color: Colors.white, size: 14),
+                          ),
                         ),
                       ),
-                  ],
+                    );
+                  }),
                 ),
               ),
-            );
-          },
-        ),
-        const SizedBox(height: 20),
-        // Legend or minimal hint
-        Row(
-          children: [
-            Container(width: 8, height: 8, decoration: BoxDecoration(color: catColor.withOpacity(0.8), shape: BoxShape.circle)),
-            const SizedBox(width: 8),
-            Text('完成日', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
-            const SizedBox(width: 16),
-            Container(width: 8, height: 8, decoration: BoxDecoration(border: Border.all(color: catColor, width: 1.5), shape: BoxShape.circle)),
-            const SizedBox(width: 8),
-            Text('今天', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
           ],
-        ),
-      ],
+        );
+      },
     );
   }
 
-  double _getRelativeFontSize(int val, Goal goal) {
-    return 12.0;
-  }
-
-  String _formatValue(int val, GoalType type) {
-    if (type == GoalType.task) return '${val} 單位';
-    
-    final h = val ~/ 3600;
-    final m = (val % 3600) ~/ 60;
-    final s = val % 60;
-
-    // Use HH:MM:SS for precision as requested
-    return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-  }
-
-  void _showManualCountDialog(BuildContext context, WidgetRef ref, DateTime targetDate) {
-    final goal = widget.goal;
-    final dateStr = '${targetDate.year}-${targetDate.month.toString().padLeft(2, '0')}-${targetDate.day.toString().padLeft(2, '0')}';
-    final initialCount = goal.completionHistory[dateStr] ?? 0;
-    final controller = TextEditingController(text: initialCount.toString());
+  void _showEditValueDialog(BuildContext context, WidgetRef ref, DateTime date, int currentVal) {
+    final controller = TextEditingController(text: widget.goal.type == GoalType.time ? (currentVal ~/ 60).toString() : currentVal.toString());
+    final dateStr = '${date.year}/${date.month}/${date.day}';
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('修正歷史紀錄', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
-            Text('${targetDate.year}/${targetDate.month}/${targetDate.day}', style: const TextStyle(fontSize: 14, color: Colors.grey)),
-          ],
-        ),
+        title: Text('$dateStr 數據修改'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('當前項目: ${goal.category}', style: const TextStyle(fontSize: 14)),
-            const SizedBox(height: 8),
-            Text(
-              goal.type == GoalType.time ? '(請輸入總計秒數)' : '(請輸入完成單位數)',
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              keyboardType: TextInputType.number,
-              autofocus: true,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: Colors.grey.withOpacity(0.1),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            if (widget.goal.type == GoalType.binary)
+              const Text('點擊下方按鈕切換達成狀態：')
+            else
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: widget.goal.type == GoalType.time ? '輸入分鐘數' : '輸入完成單位',
+                  border: const OutlineInputBorder(),
+                ),
               ),
-            ),
           ],
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          ElevatedButton(
-            onPressed: () {
-              final count = int.tryParse(controller.text) ?? 0;
-              ref.read(goalProvider.notifier).setManualValue(goal.id, targetDate, count);
-              Navigator.pop(ctx);
-            },
-            child: const Text('確認變更'),
-          ),
+          if (widget.goal.type == GoalType.binary)
+             ElevatedButton(
+               onPressed: () {
+                 ref.read(taskGoalProvider.notifier).toggleManualCompletion(widget.goal.id, date);
+                 Navigator.pop(ctx);
+               },
+               child: Text(currentVal > 0 ? '標記為未達成' : '標記為已達成'),
+             )
+          else
+            ElevatedButton(
+              onPressed: () {
+                final input = int.tryParse(controller.text) ?? 0;
+                final finalVal = widget.goal.type == GoalType.time ? input * 60 : input;
+                if (widget.goal.type == GoalType.time) {
+                  ref.read(goalProvider.notifier).setManualValue(widget.goal.id, date, finalVal);
+                } else {
+                  ref.read(taskGoalProvider.notifier).setManualValue(widget.goal.id, date, finalVal);
+                }
+                Navigator.pop(ctx);
+              },
+              child: const Text('儲存修改'),
+            ),
         ],
       ),
     );

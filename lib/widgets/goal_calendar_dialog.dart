@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/goal.dart';
 import '../providers/goal_provider.dart';
+import '../providers/task_goal_provider.dart';
 
 class GoalCalendarDialog extends ConsumerWidget {
   final Goal goal;
@@ -84,10 +85,11 @@ class GoalCalendarDialog extends ConsumerWidget {
                   final isToday = dayNum == now.day;
 
                   return GestureDetector(
-                    onTap: () {
-                        // Allow toggling for ANY day in the current month in the history view
-                        ref.read(goalProvider.notifier).toggleManualCompletion(goal.id, date);
-                    },
+                    onTap: goal.type == GoalType.time 
+                        ? null  // 時間型禁止手動編輯
+                        : () {
+                            ref.read(taskGoalProvider.notifier).toggleManualCompletion(goal.id, date);
+                          },
                     child: Container(
                       decoration: BoxDecoration(
                         color: isCompleted ? categoryColor.withOpacity(0.9) : (isToday ? categoryColor.withOpacity(0.1) : Colors.grey.shade100),

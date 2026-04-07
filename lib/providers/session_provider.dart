@@ -20,14 +20,38 @@ class SessionsNotifier extends Notifier<List<TimeSession>> {
           }
         });
       });
+
+      // 關鍵修復：Riverpod listen 不會重播已存在的快照值，必須主動讀取
+      Future.microtask(() {
+        final current = ref.read(cloudSessionsProvider);
+        if (current.hasValue && current.value != null && current.value!.isNotEmpty) {
+          _syncWithCloud(current.value!);
+        }
+      });
     }
     
-    // Only generate defaults if storage has NEVER been set (First Run)
     if (localSessions == null) {
+      // 登入狀態下不生成假數據，等待雲端同步
+      if (firestore != null) return [];
       final now = DateTime.now();
       return _generateDefaultSessions(now);
     }
     return localSessions;
+  }
+
+  // 強制從 firestore 直接抓取（繞過 stream 快牆）
+  Future<void> forceSyncFromCloud() async {
+    final firestore = ref.read(firestoreServiceProvider);
+    if (firestore == null) return;
+    try {
+      final sessions = await firestore.fetchSessionsOnce();
+      if (sessions.isNotEmpty) {
+        debugPrint('SessionsNotifier: Force sync got ${sessions.length} sessions');
+        _syncWithCloud(sessions);
+      }
+    } catch (e) {
+      debugPrint('SessionsNotifier: Force sync failed: $e');
+    }
   }
 
   void _syncWithCloud(List<dynamic> cloudSessions) {
@@ -36,7 +60,7 @@ class SessionsNotifier extends Notifier<List<TimeSession>> {
     
     final Map<String, TimeSession> cloudMap = {};
     for (var s in cloudSessions) {
-      final session = s as TimeSession;
+      final session = TimeSession.fromJson(s as Map<String, dynamic>);
       // TRUNCATE milliseconds to ensure stable IDs across platforms (consistent with FirestoreService)
       final fixedTime = (session.date.toUtc().millisecondsSinceEpoch ~/ 1000) * 1000;
       final id = '${session.category}_$fixedTime';
@@ -93,6 +117,7 @@ class SessionsNotifier extends Notifier<List<TimeSession>> {
     return importedCount;
   }
 
+
   Future<void> clearAll() async {
     state = [];
     _saveLocally(state);
@@ -117,6 +142,13 @@ class SessionsNotifier extends Notifier<List<TimeSession>> {
     _saveLocally(state);
     final firestore = ref.read(firestoreServiceProvider);
     if (firestore != null) await firestore.deleteSession(session);
+  }
+
+  void updateSession(TimeSession updated) async {
+    state = state.map((s) => s.id == updated.id ? updated : s).toList();
+    _saveLocally(state);
+    final firestore = ref.read(firestoreServiceProvider);
+    if (firestore != null) await firestore.addSession(updated); // addSession uses SET so it updates if ID exists
   }
 
   void addSession(TimeSession session) async {

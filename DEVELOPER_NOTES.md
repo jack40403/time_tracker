@@ -29,7 +29,14 @@
 
 ---
 
-*最後更新日期: 2026-04-05*
+*最後更新日期: 2026-04-07*
+
+## 🛠️ 工作流偏好 (Workflow Preference)
+*   **重點**: 往後開發過程中，**只需** 自動編譯並部署 **網頁版 (Web)**。
+*   **不需** 自動輸出 Android (APK) 或 iOS 版本，除非用戶明確要求。
+*   **執行命令**: 
+    1. `flutter build web`
+    2. `firebase deploy --only hosting`
 
 ## 📅 自定義區間分析里程碑 (Custom Date Range Milestone) - 2026-04-05
 *   **當前版本**: `v3.UltraSync_CUSTOM_DATE_RANGE` (現已全面同步至 Web)

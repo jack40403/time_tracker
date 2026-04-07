@@ -6,19 +6,21 @@ enum GoalType { time, task, binary }
 
 class Goal {
   final String id;
+  final String title; // Custom goal name
   final String category;
-  final int targetSeconds; // For Time goals: seconds. For Count goals: target count. For Binary: 1.
+  final int targetSeconds; 
   final GoalPeriod period;
   final GoalType type;
   final bool isActive;
   final DateTime createdAt;
-  final DateTime startDate; // User-defined start date
-  final Map<String, int> completionHistory; // 'yyyy-MM-dd' -> count/units
+  final DateTime startDate; 
+  final Map<String, int> completionHistory; 
 
-  final int lastMilestone; // 0, 25, 50, 75, 100
+  final int lastMilestone; 
 
   Goal({
     required this.id,
+    required this.title,
     required this.category,
     required this.targetSeconds,
     required this.period,
@@ -32,6 +34,7 @@ class Goal {
 
   Goal copyWith({
     String? id,
+    String? title,
     String? category,
     int? targetSeconds,
     GoalPeriod? period,
@@ -44,6 +47,7 @@ class Goal {
   }) {
     return Goal(
       id: id ?? this.id,
+      title: title ?? this.title,
       category: category ?? this.category,
       targetSeconds: targetSeconds ?? this.targetSeconds,
       period: period ?? this.period,
@@ -59,6 +63,7 @@ class Goal {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'title': title,
       'category': category,
       'targetSeconds': targetSeconds,
       'period': period.name,
@@ -73,22 +78,36 @@ class Goal {
 
   factory Goal.fromJson(Map<String, dynamic> json) {
     String typeStr = json['type'] as String? ?? 'time';
-    // Backwards compatibility: existing 'task' stays 'task' (count-based)
     GoalType gType = GoalType.time;
     if (typeStr == 'task') gType = GoalType.task;
     else if (typeStr == 'binary') gType = GoalType.binary;
 
+    String periodStr = json['period'] as String? ?? 'daily';
+    GoalPeriod gPeriod = GoalPeriod.daily;
+    if (periodStr == 'weekly') gPeriod = GoalPeriod.weekly;
+    else if (periodStr == 'monthly') gPeriod = GoalPeriod.monthly;
+    else if (periodStr == 'yearly') gPeriod = GoalPeriod.yearly;
+
+    final createdAtStr = json['createdAt'] as String? ?? DateTime.now().toIso8601String();
+    final startDateStr = json['startDate'] as String? ?? createdAtStr;
+    final catName = json['category'] as String? ?? '未分類';
+
     return Goal(
-      id: json['id'] as String,
-      category: json['category'] as String,
-      targetSeconds: json['targetSeconds'] as int,
-      period: GoalPeriod.values.byName(json['period'] as String),
+      id: json['id'] as String? ?? '',
+      title: json['title'] as String? ?? catName,
+      category: catName,
+      targetSeconds: (json['targetSeconds'] as num?)?.toInt() ?? 0,
+      period: gPeriod,
       type: gType,
       isActive: json['isActive'] as bool? ?? true,
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      startDate: DateTime.parse(json['startDate'] as String? ?? json['createdAt'] as String),
-      completionHistory: (json['completionHistory'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v is bool ? (v ? 1 : 0) : (v as int? ?? 0))) ?? {},
-      lastMilestone: json['lastMilestone'] as int? ?? 0,
+      createdAt: DateTime.parse(createdAtStr),
+      startDate: DateTime.parse(startDateStr),
+      completionHistory: (json['completionHistory'] as Map<String, dynamic>?)?.map((k, v) {
+        // 自動正規化日期 Key：將所有 '/' 轉換為 '-' 確保相容性
+        final normalizedKey = k.replaceAll('/', '-');
+        return MapEntry(normalizedKey, (v as num?)?.toInt() ?? 0);
+      }) ?? {},
+      lastMilestone: (json['lastMilestone'] as num?)?.toInt() ?? 0,
     );
   }
 }

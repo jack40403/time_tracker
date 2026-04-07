@@ -5,6 +5,7 @@ import 'timer_provider.dart';
 import 'firestore_provider.dart';
 import 'session_provider.dart';
 import 'goal_provider.dart';
+import 'task_goal_provider.dart';
 
 const defaultCategoryColors = {
   '閱讀 📚': Color(0xFF6C63FF),
@@ -73,51 +74,99 @@ class CategoryColorNotifier extends Notifier<Map<String, Color>> {
     }
   }
 
-  void renameCategory(String oldCat, String newCat) {
+  void renameCategory(String oldCat, String newCatRaw) {
+    final newCat = newCatRaw.trim();
+    if (newCat.isEmpty || newCat == oldCat) return;
+
     if (state.containsKey(oldCat)) {
       final color = state[oldCat]!;
       final newState = Map<String, Color>.from(state);
+      
+      // Preserve order: find index of old category
+      final keys = newState.keys.toList();
+      final index = keys.indexOf(oldCat);
+      
       newState.remove(oldCat);
-      newState[newCat] = color;
       
-      // Update both hidden category lists
-      ref.read(hiddenCategoriesProvider.notifier).unhideCategory(oldCat);
-      ref.read(hiddenCategoriesProvider.notifier).unhideCategory(newCat);
+      // Reconstruct state to preserve position
+      final Map<String, Color> orderedState = {};
+      for (int i = 0; i < keys.length; i++) {
+        if (i == index) {
+          orderedState[newCat] = color;
+        } else if (keys[i] != oldCat) {
+          orderedState[keys[i]] = state[keys[i]]!;
+        }
+      }
       
-      ref.read(timerHiddenCategoriesProvider.notifier).unhideCategory(oldCat);
-      ref.read(timerHiddenCategoriesProvider.notifier).unhideCategory(newCat);
+      // Preserve hidden status during rename
+      final isGlobalHidden = ref.read(hiddenCategoriesProvider).contains(oldCat);
+      final isTimerHidden = ref.read(timerHiddenCategoriesProvider).contains(oldCat);
+
+      if (isGlobalHidden) {
+        ref.read(hiddenCategoriesProvider.notifier).hideCategory(newCat);
+        ref.read(hiddenCategoriesProvider.notifier).unhideCategory(oldCat);
+      }
+      if (isTimerHidden) {
+        ref.read(timerHiddenCategoriesProvider.notifier).hideCategory(newCat);
+        ref.read(timerHiddenCategoriesProvider.notifier).unhideCategory(oldCat);
+      }
       
-      state = newState;
+      state = orderedState;
       _save();
       
-      // Update across all tracked data to avoid "double data" issue
+      // ATOMIC UPDATE: Link across all providers
       ref.read(timerProvider.notifier).handleCategoryRename(oldCat, newCat);
       ref.read(sessionsProvider.notifier).renameCategory(oldCat, newCat);
       ref.read(goalProvider.notifier).renameCategory(oldCat, newCat);
+      ref.read(taskGoalProvider.notifier).renameCategory(oldCat, newCat);
     }
   }
 
-  // ONLY HIDES category (KEEP HISTORY COLORS)
-  void deleteCategory(String category) {
+  // ARCHIVES category (Hides it from all main views but keeps definition)
+  void archiveCategory(String category) {
     if (state.length <= 1) return;
     ref.read(hiddenCategoriesProvider.notifier).hideCategory(category);
     _save();
-    // STOP: We no longer reset the timer for "Label Only (Hidden)" categories.
-    // The user can continue timing the hidden category until they finish.
   }
   
-  // COMPLETELY REMOVES category and colors
-  void hardDeleteCategory(String category) {
-     if (state.length <= 1) return;
-     final newState = Map<String, Color>.from(state);
-     newState.remove(category);
-     ref.read(hiddenCategoriesProvider.notifier).removePermanently(category);
-     state = newState;
-     _save();
-     
-     // Remove all associated data
-     ref.read(timerProvider.notifier).handleCategoryDelete(category);
-     ref.read(sessionsProvider.notifier).deleteByCategory(category);
+  // REMOVES category from ACTIVE LIST but PROTECTS HISTORY
+  bool removeCategoryFromList(String category) {
+     try {
+       debugPrint('CategoryProvider: Request to remove category: "$category"');
+       if (state.length <= 1) {
+          debugPrint('CategoryProvider: Cancelled - cannot remove the last item.');
+          return false;
+       }
+       final hiddenNotifier = ref.read(hiddenCategoriesProvider.notifier);
+       final newState = Map<String, Color>.from(state);
+       newState.remove(category);
+       hiddenNotifier.removePermanently(category);
+       state = newState;
+       _save();
+       return true;
+     } catch (e) {
+       return false;
+     }
+  }
+
+  // WIPE category COMPLETELY (Category + Sessions + Goals)
+  Future<bool> wipeCategoryCompletely(String category) async {
+    try {
+      if (state.length <= 1) return false;
+      
+      // 1. Delete all sessions
+      ref.read(sessionsProvider.notifier).deleteByCategory(category);
+      
+      // 2. Delete all goals (Time & Task)
+      await ref.read(goalProvider.notifier).deleteGoalsByCategory(category);
+      await ref.read(taskGoalProvider.notifier).deleteGoalsByCategory(category);
+      
+      // 3. Remove the category identity
+      return removeCategoryFromList(category);
+    } catch (e) {
+      debugPrint('CategoryProvider Wipe Error: $e');
+      return false;
+    }
   }
 
   void resetToTrueZero() {
@@ -312,6 +361,55 @@ class TimerHiddenCategoriesNotifier extends Notifier<Set<String>> {
   }
 }
 
+class GoalsHiddenCategoriesNotifier extends Notifier<Set<String>> {
+  @override
+  Set<String> build() {
+    final storage = ref.read(storageServiceProvider);
+    // Use a new storage key for goal-specific hiding
+    final initial = (storage.prefs.getStringList('goals_hidden_categories') ?? []).toSet();
+    
+    // Sync from cloud settings if exists
+    ref.listen(cloudSettingsProvider, (previous, next) {
+      final cloudSettings = next.value;
+      if (cloudSettings != null && cloudSettings.containsKey('goals_hidden_categories')) {
+         final cloudHidden = (cloudSettings['goals_hidden_categories'] as List).cast<String>().toSet();
+         if (cloudHidden.length != state.length || !cloudHidden.every(state.contains)) {
+           state = cloudHidden;
+           storage.prefs.setStringList('goals_hidden_categories', state.toList());
+         }
+      }
+    });
+
+    return initial;
+  }
+
+  void hideCategory(String category) {
+    if (!state.contains(category)) {
+      state = {...state, category};
+      _save();
+    }
+  }
+
+  void unhideCategory(String category) {
+    if (state.contains(category)) {
+      final newState = Set<String>.from(state);
+      newState.remove(category);
+      state = newState;
+      _save();
+    }
+  }
+
+  void _save() {
+    final storage = ref.read(storageServiceProvider);
+    storage.prefs.setStringList('goals_hidden_categories', state.toList());
+    
+    final firestore = ref.read(firestoreServiceProvider);
+    if (firestore != null) {
+      firestore.updateSettings({'goals_hidden_categories': state.toList()});
+    }
+  }
+}
+
 final categoryColorProvider = NotifierProvider<CategoryColorNotifier, Map<String, Color>>(
   () => CategoryColorNotifier(),
 );
@@ -324,7 +422,11 @@ final timerHiddenCategoriesProvider = NotifierProvider<TimerHiddenCategoriesNoti
   () => TimerHiddenCategoriesNotifier(),
 );
 
-// Global Visibility (used for Goals, Charts, etc.)
+final goalsHiddenCategoriesProvider = NotifierProvider<GoalsHiddenCategoriesNotifier, Set<String>>(
+  () => GoalsHiddenCategoriesNotifier(),
+);
+
+// Global Visibility (used for History, Charts, etc.)
 final visibleCategoriesProvider = Provider<List<String>>((ref) {
   final all = ref.watch(categoryColorProvider).keys.toList();
   final hidden = ref.watch(hiddenCategoriesProvider);
@@ -336,4 +438,11 @@ final timerVisibleCategoriesProvider = Provider<List<String>>((ref) {
   final globalVisible = ref.watch(visibleCategoriesProvider);
   final timerHidden = ref.watch(timerHiddenCategoriesProvider);
   return globalVisible.where((c) => !timerHidden.contains(c)).toList();
+});
+
+// Goals-specific Visibility (used for Goals Page)
+final goalsVisibleCategoriesProvider = Provider<List<String>>((ref) {
+  final globalVisible = ref.watch(visibleCategoriesProvider);
+  final goalsHidden = ref.watch(goalsHiddenCategoriesProvider);
+  return globalVisible.where((c) => !goalsHidden.contains(c)).toList();
 });

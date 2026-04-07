@@ -83,7 +83,20 @@ class StatisticsPage extends ConsumerWidget {
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
-      body: SingleChildScrollView(
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragEnd: (details) {
+          if (filter == 'custom') return;
+          const velocityThreshold = 500;
+          if (details.primaryVelocity! < -velocityThreshold) {
+            // Swipe Left -> Move Forward (Next Period)
+            if (offset > 0) ref.read(statsOffsetProvider.notifier).setOffset(offset - 1);
+          } else if (details.primaryVelocity! > velocityThreshold) {
+            // Swipe Right -> Move Backward (Previous Period)
+            ref.read(statsOffsetProvider.notifier).setOffset(offset + 1);
+          }
+        },
+        child: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -266,16 +279,16 @@ class StatisticsPage extends ConsumerWidget {
                   child: Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: Theme.of(context).colorScheme.outlineVariant)),
-                    child: Row(
-                      children: [
-                        Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-                        const SizedBox(width: 16),
-                        Expanded(child: Text(e.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18))),
-                        Text(FormatUtils.formatDuration(e.value), style: GoogleFonts.shareTechMono(color: Theme.of(context).colorScheme.primary, fontSize: 18)),
-                        const SizedBox(width: 12),
-                        const Icon(Icons.chevron_right_rounded, size: 24, color: Colors.grey),
-                      ],
-                    ),
+                        child: Row(
+                          children: [
+                            Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                            const SizedBox(width: 16),
+                            Expanded(child: Text(e.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18), overflow: TextOverflow.ellipsis)),
+                            Text(FormatUtils.formatDuration(e.value), style: GoogleFonts.shareTechMono(color: Theme.of(context).colorScheme.primary, fontSize: 18)),
+                            const SizedBox(width: 12),
+                            const Icon(Icons.chevron_right_rounded, size: 24, color: Colors.grey),
+                          ],
+                        ),
                   ),
                 ),
               );
@@ -283,6 +296,7 @@ class StatisticsPage extends ConsumerWidget {
           ],
         ),
       ),
+    ),
     );
   }
 

@@ -268,8 +268,21 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragEnd: (details) {
+          if (filter == 'custom') return;
+          const velocityThreshold = 500;
+          if (details.primaryVelocity! < -velocityThreshold) {
+            // Swipe Left -> Move Forward (Next Period)
+            if (offset > 0) ref.read(historyOffsetProvider.notifier).setOffset(offset - 1);
+          } else if (details.primaryVelocity! > velocityThreshold) {
+            // Swipe Right -> Move Backward (Previous Period)
+            ref.read(historyOffsetProvider.notifier).setOffset(offset + 1);
+          }
+        },
+        child: Column(
+          children: [
           const SizedBox(height: 16),
           // Filter Chips
           Center(
@@ -392,41 +405,133 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                                 decoration: BoxDecoration(color: Colors.red.shade400, borderRadius: BorderRadius.circular(16)),
                                 child: const Icon(Icons.delete_outline, color: Colors.white),
                               ),
-                              child: Container(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: Theme.of(context).colorScheme.outlineVariant)),
-                                child: Row(
-                                  children: [
-                                    Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-                                    const SizedBox(width: 14),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          InkWell(
-                                            onTap: () => ref.read(historyCategoryFilterProvider.notifier).setCategory(s.category),
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 2),
-                                              child: Text(s.category, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                                child: InkWell(
+                                  onTap: () => _showEditSessionDialog(s),
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Container(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: Theme.of(context).colorScheme.outlineVariant)),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                                            const SizedBox(width: 14),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(s.category, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18), overflow: TextOverflow.ellipsis),
+                                                  Text('${s.date.hour.toString().padLeft(2, '0')}:${s.date.minute.toString().padLeft(2, '0')}', style: const TextStyle(fontSize: 15, color: Colors.grey)),
+                                                ],
+                                              ),
                                             ),
+                                            Text(_formatTime(s.durationSeconds), style: GoogleFonts.shareTechMono(fontWeight: FontWeight.bold, fontSize: 18)),
+                                          ],
+                                        ),
+                                        if (s.note != null && s.note!.isNotEmpty) ...[
+                                          const SizedBox(height: 10),
+                                          Container(
+                                            width: double.infinity,
+                                            padding: const EdgeInsets.all(12),
+                                            decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withOpacity(0.05), borderRadius: BorderRadius.circular(10)),
+                                            child: Text(s.note!, style: const TextStyle(fontSize: 13, height: 1.4, fontStyle: FontStyle.italic)),
                                           ),
-                                          Text('${s.date.hour.toString().padLeft(2, '0')}:${s.date.minute.toString().padLeft(2, '0')}', style: const TextStyle(fontSize: 15, color: Colors.grey)),
                                         ],
-                                      ),
+                                      ],
                                     ),
-                                    Text(_formatTime(s.durationSeconds), style: GoogleFonts.shareTechMono(fontWeight: FontWeight.bold, fontSize: 18)),
-                                  ],
+                                  ),
                                 ),
-                              ),
-                            );
-                          }).toList(),
+                              );
+                            }).toList(),
                         ],
                       );
                     },
                   ),
           ),
         ],
+      ),
+    ),
+    );
+  }
+
+  void _showEditSessionDialog(TimeSession session) {
+    final catColors = ref.read(categoryColorProvider);
+    String selectedCategory = session.category;
+    final hoursController = TextEditingController(text: (session.durationSeconds ~/ 3600).toString());
+    final minutesController = TextEditingController(text: ((session.durationSeconds % 3600) ~/ 60).toString());
+    final secondsController = TextEditingController(text: (session.durationSeconds % 60).toString());
+    final noteController = TextEditingController(text: session.note ?? '');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => AlertDialog(
+          title: const Text('編輯紀錄 / 日誌', style: TextStyle(fontWeight: FontWeight.bold)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: selectedCategory,
+                  decoration: const InputDecoration(labelText: '分類'),
+                  items: catColors.keys.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                  onChanged: (v) => setModalState(() => selectedCategory = v!),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(child: TextField(controller: hoursController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '時'))),
+                    const SizedBox(width: 8),
+                    Expanded(child: TextField(controller: minutesController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '分'))),
+                    const SizedBox(width: 8),
+                    Expanded(child: TextField(controller: secondsController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '秒'))),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: noteController,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                    labelText: '專注紀錄 / 日誌備註',
+                    hintText: '記下這段時間做了什麼或心得...',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final h = int.tryParse(hoursController.text) ?? 0;
+                final m = int.tryParse(minutesController.text) ?? 0;
+                final s = int.tryParse(secondsController.text) ?? 0;
+                final newDuration = h * 3600 + m * 60 + s;
+                
+                if (newDuration <= 0) return;
+
+                final updated = session.copyWith(
+                  category: selectedCategory,
+                  durationSeconds: newDuration,
+                  note: noteController.text.trim(),
+                );
+                
+                ref.read(sessionsProvider.notifier).updateSession(updated);
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('紀錄已更新')));
+              },
+              child: const Text('確認修改'),
+            ),
+          ],
+        ),
       ),
     );
   }

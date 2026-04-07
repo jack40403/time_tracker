@@ -37,18 +37,18 @@ class HomePage extends ConsumerWidget {
   }
 
   Widget _buildMobileLayout(BuildContext context, WidgetRef ref, BoxConstraints constraints) {
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          const SizedBox(height: 20),
-          _buildHeader(context, ref),
-          const SizedBox(height: 16),
-          _buildCategoryList(context, ref),
-          const SizedBox(height: 10),
-          _buildTimerCard(context, ref),
-          _buildActionButtons(context, ref),
-        ],
-      ),
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(child: const SizedBox(height: 20)),
+        SliverToBoxAdapter(child: _buildHeader(context, ref)),
+        SliverToBoxAdapter(child: const SizedBox(height: 16)),
+        SliverToBoxAdapter(child: _buildCategoryList(context, ref)),
+        SliverToBoxAdapter(child: const SizedBox(height: 10)),
+        SliverToBoxAdapter(child: _buildTimerCard(context, ref)),
+        SliverToBoxAdapter(child: _buildActionButtons(context, ref)),
+        // Add padding at the bottom for navigation bar
+        SliverToBoxAdapter(child: const SizedBox(height: 80)),
+      ],
     );
   }
 
@@ -56,88 +56,52 @@ class HomePage extends ConsumerWidget {
     return SingleChildScrollView(
       child: ConstrainedBox(
         constraints: BoxConstraints(minHeight: constraints.maxHeight),
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Left side: Main Timer Card & Actions
-              Expanded(
-                flex: 3,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Left side: Main Timer Card & Actions
+            Expanded(
+              flex: 3,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 48),
                 child: Column(
                   children: [
-                    const SizedBox(height: 48),
-                    Expanded(child: Center(child: _buildTimerCard(context, ref, scale: 1.1))),
+                    _buildTimerCard(context, ref, scale: 1.1),
+                    const SizedBox(height: 12),
                     _buildActionButtons(context, ref),
-                    const SizedBox(height: 48),
                   ],
                 ),
               ),
-              // Vertical Divider
-              Container(width: 1, color: Colors.white.withOpacity(0.1)),
-              // Right side: Header & Category Selector
-              Expanded(
-                flex: 2,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 48),
-                    _buildHeader(context, ref),
-                    const SizedBox(height: 32),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                      child: Text(
-                        'SELECT CATEGORY',
-                        style: GoogleFonts.outfit(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 2,
-                          color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
-                        ),
+            ),
+            // Vertical Divider
+            Container(width: 1, height: constraints.maxHeight, color: Colors.white.withOpacity(0.1)),
+            // Right side: Header & Category Selector
+            Expanded(
+              flex: 2,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 48),
+                  _buildHeader(context, ref),
+                  const SizedBox(height: 32),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                    child: Text(
+                      'SELECT CATEGORY',
+                      style: GoogleFonts.outfit(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                        color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    Expanded(
-                      child: ReorderableListView(
-                        onReorder: (oldIndex, newIndex) {
-                          ref.read(categoryColorProvider.notifier).reorderCategories(oldIndex, newIndex);
-                        },
-                        buildDefaultDragHandles: false,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(24, 0, 24, 100),
-                        children: [
-                          if (ref.watch(timerVisibleCategoriesProvider).isEmpty)
-                            const Center(
-                              child: Padding(
-                                padding: EdgeInsets.symmetric(vertical: 32),
-                                child: Text('尚未新增項目，請點擊下方開始', style: TextStyle(color: Colors.grey, fontSize: 13)),
-                              ),
-                            ),
-                          ...ref.watch(timerVisibleCategoriesProvider).asMap().entries.map((entry) {
-                            final i = entry.key;
-                            final cat = entry.value;
-                            return Padding(
-                              key: ValueKey('wide_$cat'),
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: _buildCategoryChip(context, ref, cat, ref.watch(timerProvider), i, isWide: true),
-                            );
-                          }),
-                          ListTile(
-                            key: const ValueKey('add_btn'),
-                            onTap: () => showAddCategoryDialog(context, ref),
-                            leading: const Icon(Icons.add_rounded),
-                            title: const Text('新增分類'),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            tileColor: Theme.of(context).colorScheme.surface,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildCategoryList(context, ref), // Use the component to keep consistent
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -240,7 +204,7 @@ class HomePage extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           Container(
-            constraints: const BoxConstraints(maxHeight: 250), // Prevent too tall on mobile
+            constraints: const BoxConstraints(maxHeight: 320), // 限制高度，避免佔用過多空間
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surface.withOpacity(0.3),
               borderRadius: BorderRadius.circular(20),
@@ -249,24 +213,24 @@ class HomePage extends ConsumerWidget {
             child: ReorderableListView(
               buildDefaultDragHandles: false,
               shrinkWrap: true,
-              physics: const ClampingScrollPhysics(), // Important for SingleChildScrollView
+              physics: const ClampingScrollPhysics(), // 允許內部滑動
               onReorder: (oldIndex, newIndex) {
                  ref.read(categoryColorProvider.notifier).reorderCategories(oldIndex, newIndex);
               },
               padding: const EdgeInsets.all(8),
-              children: visible.isEmpty 
-                ? [
-                    const Padding(
-                      key: ValueKey('empty_prompt'),
-                      padding: EdgeInsets.symmetric(vertical: 32),
-                      child: Center(child: Text('尚未新增項目，點擊右上方＋開始', style: TextStyle(color: Colors.grey, fontSize: 13))),
-                    )
-                  ]
-                : visible.asMap().entries.map((entry) {
+              children: [
+                ...visible.asMap().entries.map((entry) {
                     final i = entry.key;
                     final cat = entry.value;
                     return _buildCategoryChip(context, ref, cat, timerState, i, isWide: true);
-                  }).toList(),
+                }),
+                if (visible.isEmpty)
+                   const Padding(
+                      key: ValueKey('empty_prompt'),
+                      padding: EdgeInsets.symmetric(vertical: 32),
+                      child: Center(child: Text('尚未新增項目，點擊上方＋號', style: TextStyle(color: Colors.grey, fontSize: 13))),
+                    ),
+              ],
             ),
           ),
         ],
@@ -476,7 +440,7 @@ class HomePage extends ConsumerWidget {
 
           if (timerState.currentElapsed > 0)
             IconButton.filledTonal(
-              onPressed: timerNotifier.stopAndSave,
+              onPressed: () => _showStopAndSaveDialog(context, ref),
               icon: const Icon(Icons.stop_rounded, size: 28),
               style: IconButton.styleFrom(
                 backgroundColor: Colors.red.withOpacity(0.12),
@@ -487,6 +451,48 @@ class HomePage extends ConsumerWidget {
             )
           else
             const SizedBox(width: 60),
+        ],
+      ),
+    );
+  }
+
+  void _showStopAndSaveDialog(BuildContext context, WidgetRef ref) {
+    final timerState = ref.read(timerProvider);
+    final noteController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('完成專注 / 紀錄日誌', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('類別: ${timerState.category}', style: const TextStyle(fontSize: 16)),
+            const SizedBox(height: 8),
+            Text('專注總時長: ${_formatTime(timerState.currentElapsed)}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 20),
+            TextField(
+              controller: noteController,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: '專注心得 / 日誌 (可不填)',
+                hintText: '剛才的時間裡，你做了什麼有趣的紀錄嗎？',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          ElevatedButton(
+            onPressed: () {
+              ref.read(timerProvider.notifier).stopAndSave(note: noteController.text.trim());
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已儲存專注日誌 ✨')));
+            }, 
+            child: const Text('完成並儲存'),
+          ),
         ],
       ),
     );

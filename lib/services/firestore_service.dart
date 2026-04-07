@@ -15,6 +15,9 @@ class FirestoreService {
   CollectionReference get _goalsRef =>
       _db.collection('users').doc(userId).collection('goals');
   
+  CollectionReference get _taskGoalsRef =>
+      _db.collection('users').doc(userId).collection('task_goals');
+  
   DocumentReference get _settingsRef =>
       _db.collection('users').doc(userId).collection('settings').doc('app_config');
 
@@ -36,6 +39,24 @@ class FirestoreService {
         return TimeSession.fromJson(doc.data() as Map<String, dynamic>);
       }).toList();
     });
+  }
+
+  // 強制從 Server 一次性讀取（繞過 Android Chrome IndexedDB 快牆）
+  Future<List<Map<String, dynamic>>> fetchSessionsOnce() async {
+    debugPrint('FirestoreService: Force fetching sessions from SERVER for $userId');
+    try {
+      // 指定 Source.server 強制從伺服器讀取，不用快牆
+      final snap = await _sessionsRef
+          .orderBy('date', descending: true)
+          .get(const GetOptions(source: Source.server));
+      debugPrint('FirestoreService: Force fetch got ${snap.docs.length} sessions');
+      return snap.docs.map((d) => d.data() as Map<String, dynamic>).toList();
+    } catch (e) {
+      debugPrint('FirestoreService: Server fetch failed, trying cache: $e');
+      // 如果伺服器失敗，回落到快牆
+      final snap = await _sessionsRef.orderBy('date', descending: true).get();
+      return snap.docs.map((d) => d.data() as Map<String, dynamic>).toList();
+    }
   }
 
   Future<void> addSession(TimeSession session) async {
@@ -160,15 +181,26 @@ class FirestoreService {
     }
   }
 
-  // --- Goals Sync ---
+  // --- Goals Sync (Time) ---
   Stream<List<Map<String, dynamic>>> watchGoals() {
     return _goalsRef.snapshots().map((snapshot) {
       return snapshot.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
     });
   }
 
+  // 一次性讀取目標（繞過 Stream 快牆）
+  Future<List<Map<String, dynamic>>> fetchGoalsOnce() async {
+    final snap = await _goalsRef.get();
+    return snap.docs.map((d) => d.data() as Map<String, dynamic>).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchTaskGoalsOnce() async {
+    final snap = await _taskGoalsRef.get();
+    return snap.docs.map((d) => d.data() as Map<String, dynamic>).toList();
+  }
+
   Future<void> saveGoals(List<dynamic> goals) async {
-    debugPrint('FirestoreService: Saving ${goals.length} goals');
+    debugPrint('FirestoreService: Saving ${goals.length} time goals');
     try {
       final batch = _db.batch();
       final existing = await _goalsRef.get();
@@ -180,9 +212,35 @@ class FirestoreService {
         batch.set(_goalsRef.doc(data['id']), data);
       }
       await batch.commit();
-      debugPrint('FirestoreService: Goals saved');
+      debugPrint('FirestoreService: Time Goals saved');
     } catch (e) {
-      debugPrint('FirestoreService Error saving goals: $e');
+      debugPrint('FirestoreService Error saving time goals: $e');
+    }
+  }
+
+  // --- Goals Sync (Task/Binary) ---
+  Stream<List<Map<String, dynamic>>> watchTaskGoals() {
+    return _taskGoalsRef.snapshots().map((snapshot) {
+      return snapshot.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
+    });
+  }
+
+  Future<void> saveTaskGoals(List<dynamic> goals) async {
+    debugPrint('FirestoreService: Saving ${goals.length} task goals');
+    try {
+      final batch = _db.batch();
+      final existing = await _taskGoalsRef.get();
+      for (var doc in existing.docs) {
+        batch.delete(doc.reference);
+      }
+      for (var g in goals) {
+        final data = g is Map ? g : (g as dynamic).toJson();
+        batch.set(_taskGoalsRef.doc(data['id']), data);
+      }
+      await batch.commit();
+      debugPrint('FirestoreService: Task Goals saved');
+    } catch (e) {
+      debugPrint('FirestoreService Error saving task goals: $e');
     }
   }
 }

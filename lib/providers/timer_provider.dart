@@ -309,13 +309,24 @@ class TimerNotifier extends Notifier<TimerState> {
 
   void handleCategoryDelete(String category) {
     if (state.category == category) {
+      debugPrint('TimerNotifier: Current category "$category" was deleted. Finding fallback...');
       _timer?.cancel();
-      // FALLBACK: Find the first visible/available category instead of hardcoded 'Reading'
-      final allCats = ref.read(categoryColorProvider).keys.toList();
+      
+      final currentMap = ref.read(categoryColorProvider);
+      final allCats = currentMap.keys.toList();
       final hidden = ref.read(hiddenCategoriesProvider);
       final visible = allCats.where((c) => !hidden.contains(c)).toList();
       
-      final String fallback = visible.isNotEmpty ? visible.first : (allCats.isNotEmpty ? allCats.first : '尚未選擇項目');
+      String fallback;
+      if (visible.isNotEmpty) {
+        fallback = visible.first;
+      } else if (allCats.isNotEmpty) {
+        fallback = allCats.first;
+      } else {
+        fallback = '尚未選擇項目';
+      }
+      
+      debugPrint('TimerNotifier: Switching fallback to: "$fallback"');
       state = TimerState(category: fallback);
       _pushToCloud();
     }
@@ -346,7 +357,7 @@ class TimerNotifier extends Notifier<TimerState> {
     _pushToCloud();
   }
 
-  void stopAndSave() {
+  void stopAndSave({String? note}) {
     _timer?.cancel();
     HapticFeedback.vibrate();
     final elapsed = state.currentElapsed;
@@ -355,6 +366,7 @@ class TimerNotifier extends Notifier<TimerState> {
         category: state.category,
         durationSeconds: elapsed,
         date: DateTime.now().toLocal(),
+        note: note,
       );
       ref.read(sessionsProvider.notifier).addSession(session);
     }

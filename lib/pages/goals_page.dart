@@ -1,522 +1,561 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:confetti/confetti.dart';
 import '../models/goal.dart';
 import '../providers/goal_provider.dart';
+import '../providers/task_goal_provider.dart';
 import '../providers/category_provider.dart';
-import '../providers/session_provider.dart';
+import '../providers/goal_order_provider.dart';
+import '../providers/firestore_provider.dart';
 import '../widgets/goal_progress_card.dart';
-import '../widgets/category_dialogs.dart';
 
 class GoalsPage extends ConsumerStatefulWidget {
   const GoalsPage({super.key});
-
   @override
   ConsumerState<GoalsPage> createState() => _GoalsPageState();
 }
 
 class _GoalsPageState extends ConsumerState<GoalsPage> {
-  late ConfettiController _confettiController;
 
-  @override
-  void initState() {
-    super.initState();
-    _confettiController = ConfettiController(duration: const Duration(seconds: 3));
+  // ── 用排序後的 ID 列表組合顯示順序
+  List<Goal> _sortedGoals(List<Goal> all, List<String> order) {
+    final map = {for (final g in all) g.id: g};
+    final sorted = <Goal>[];
+    // 先按已知順序加入
+    for (final id in order) {
+      if (map.containsKey(id)) sorted.add(map[id]!);
+    }
+    // 新增但還沒在順序列表中的目標加到末尾
+    for (final g in all) {
+      if (!order.contains(g.id)) {
+        sorted.add(g);
+        ref.read(goalOrderProvider.notifier).ensureContains(g.id);
+      }
+    }
+    return sorted;
   }
 
-  @override
-  void dispose() {
-    _confettiController.dispose();
-    super.dispose();
+  void _onReorder(List<Goal> current, int oldIndex, int newIndex) {
+    if (newIndex > oldIndex) newIndex--;
+    final updated = List<Goal>.from(current);
+    final item = updated.removeAt(oldIndex);
+    updated.insert(newIndex, item);
+    ref.read(goalOrderProvider.notifier).reorder(updated.map((g) => g.id).toList());
   }
 
-  void _showGoalFormDialog({Goal? existingGoal}) {
-    final catColors = ref.read(categoryColorProvider);
-    final visibleCategories = ref.read(visibleCategoriesProvider);
-    final sessions = ref.read(sessionsProvider);
-    final historyCategories = sessions.map((s) => s.category).toSet();
-    
-    // Combine current visible categories and historical categories
-    final allCategories = {...visibleCategories, ...historyCategories}.toList();
-    if (allCategories.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('⚠️ 請先新增至少一個項目或開始計時')),
-      );
+  // ──────────────────────────────────────────────────────
+  // 強制同步
+  // ──────────────────────────────────────────────────────
+  void _forceSync() async {
+    final firestore = ref.read(firestoreServiceProvider);
+    if (firestore == null) {
+      _showError('請先登入才能同步');
       return;
     }
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('正在從雲端同步...'),
+      duration: Duration(seconds: 2),
+      behavior: SnackBarBehavior.floating,
+    ));
+    // 直接讀取 Firestore 目前快照，繞過 stream 快取
+    try {
+      final goals = await firestore.fetchGoalsOnce();
+      final taskGoals = await firestore.fetchTaskGoalsOnce();
+      if (goals.isNotEmpty) {
+        final remote = goals.map((e) => Goal.fromJson(e)).toList();
+        ref.read(goalProvider.notifier).forceMergeFromCloud(remote);
+      }
+      if (taskGoals.isNotEmpty) {
+        final remote = taskGoals.map((e) => Goal.fromJson(e)).toList();
+        ref.read(taskGoalProvider.notifier).forceMergeFromCloud(remote);
+      }
+      if (mounted) {
+        _showSuccess('同步完成！共載入 ${goals.length + taskGoals.length} 個目標');
+      }
+    } catch (e) {
+      if (mounted) _showError('同步失敗：$e');
+    }
+  }
 
-    final bool isEditing = existingGoal != null;
-    GoalPeriod selectedPeriod = existingGoal?.period ?? GoalPeriod.daily;
-    GoalType selectedType = existingGoal?.type ?? GoalType.time;
-    
-    final int initialSeconds = existingGoal?.targetSeconds ?? 7200; // 2h default
-    final hoursController = TextEditingController(text: (initialSeconds ~/ 3600).toString());
-    final minutesController = TextEditingController(text: ((initialSeconds % 3600) ~/ 60).toString());
-    DateTime selectedStartDate = existingGoal?.startDate ?? DateTime.now();
-    String? manuallySelectedCategory;
+  // ──────────────────────────────────────────────────────
+  // 新增目標 Dialog
+  // ──────────────────────────────────────────────────────
+  void _showAddGoalDialog() {
+    final catColors = ref.read(categoryColorProvider);
+    final allCategories = catColors.keys.toList();
+    if (allCategories.isEmpty) { _showNoCategoryDialog(); return; }
 
-    showModalBottomSheet(
+    String selectedCategory = allCategories.first;
+    GoalType selectedType = GoalType.time;
+    GoalPeriod selectedPeriod = GoalPeriod.daily;
+    DateTime selectedStartDate = DateTime.now();
+    final hoursCtrl  = TextEditingController(text: '1');
+    final minsCtrl   = TextEditingController(text: '0');
+    final countCtrl  = TextEditingController(text: '5');
+
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Consumer(
-        builder: (ctx, ref, _) {
-          return StatefulBuilder(
-            builder: (ctx, setModalState) {
-              final categories = allCategories;
-              final currentCategory = manuallySelectedCategory ?? (isEditing ? existingGoal!.category : categories.first);
-              final safeCategory = categories.contains(currentCategory) ? currentCategory : categories.first;
-
-              return Container(
-              padding: EdgeInsets.only(
-                left: 28, right: 28, top: 28,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 28,
-              ),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 45, height: 5,
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.outlineVariant,
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Text(isEditing ? '編輯目標' : '設定新目標', style: GoogleFonts.outfit(fontSize: 28, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 28),
-
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('設定新目標', style: GoogleFonts.outfit(fontSize: 22, fontWeight: FontWeight.bold)),
+                const Divider(height: 28),
+                Text('追蹤項目', style: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade600)),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(12)),
+                  child: Row(
                     children: [
-                      Text('選擇項目', style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
-                      if (!isEditing)
-                         IconButton(
-                          visualDensity: VisualDensity.compact,
-                          icon: Icon(Icons.add_circle_outline, color: Theme.of(context).colorScheme.primary, size: 20),
-                          onPressed: () => showAddCategoryDialog(context, ref),
-                          tooltip: '新增項目',
+                      Expanded(
+                        child: DropdownButton<String>(
+                          value: selectedCategory, isExpanded: true, underline: const SizedBox(),
+                          style: GoogleFonts.outfit(fontSize: 16, color: Colors.black87),
+                          items: allCategories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                          onChanged: (v) => setS(() => selectedCategory = v!),
                         ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline, color: Colors.blue),
+                        tooltip: '新增項目類別',
+                        onPressed: () { Navigator.pop(ctx); _showAddCategoryThenGoal(); },
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<String>(
-                    value: safeCategory,
-                    style: TextStyle(fontSize: 20, color: Theme.of(context).textTheme.bodyLarge?.color),
-                    decoration: InputDecoration(
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                    ),
-                    items: categories.map((c) => DropdownMenuItem<String>(
-                      value: c,
-                      child: Row(children: [
-                        Container(
-                          width: 14, height: 14, 
-                          decoration: BoxDecoration(
-                            color: catColors[c] ?? Colors.grey.withOpacity(0.5), 
-                            shape: BoxShape.circle
-                          )
-                        ),
-                        const SizedBox(width: 12),
-                        Text(c, style: const TextStyle(fontSize: 20)),
-                      ]),
-                    )).toList(),
-                    onChanged: isEditing ? null : (v) { 
-                      if (v != null) {
-                        setModalState(() => manuallySelectedCategory = v);
+                ),
+                const SizedBox(height: 20),
+                Text('目標模式', style: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade600)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    _typeChip(GoalType.time,   '⏱ 時間型', selectedType, (v) => setS(() => selectedType = v)),
+                    _typeChip(GoalType.task,   '🔢 計數型', selectedType, (v) => setS(() => selectedType = v)),
+                    _typeChip(GoalType.binary, '✅ 是非型', selectedType, (v) => setS(() => selectedType = v)),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                if (selectedType == GoalType.time) ...[
+                  Text('每期目標時數', style: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade600)),
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    Expanded(child: _bigField(hoursCtrl, '小時', '時')),
+                    const SizedBox(width: 12),
+                    Expanded(child: _bigField(minsCtrl, '分鐘', '分')),
+                  ]),
+                ] else if (selectedType == GoalType.task) ...[
+                  Text('每期目標次數', style: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade600)),
+                  const SizedBox(height: 8),
+                  _bigField(countCtrl, '次數', '次'),
+                ],
+                const SizedBox(height: 20),
+                Text('統計週期', style: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade600)),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(12)),
+                  child: DropdownButton<GoalPeriod>(
+                    value: selectedPeriod, isExpanded: true, underline: const SizedBox(),
+                    style: GoogleFonts.outfit(fontSize: 16, color: Colors.black87),
+                    items: const [
+                      DropdownMenuItem(value: GoalPeriod.daily,   child: Text('每日')),
+                      DropdownMenuItem(value: GoalPeriod.weekly,  child: Text('每週')),
+                      DropdownMenuItem(value: GoalPeriod.monthly, child: Text('每月')),
+                      DropdownMenuItem(value: GoalPeriod.yearly,  child: Text('每年')),
+                    ],
+                    onChanged: (v) => setS(() => selectedPeriod = v!),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text('目標起始日', style: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade600)),
+                const SizedBox(height: 8),
+                InkWell(
+                  onTap: () async {
+                    final picked = await showDatePicker(context: ctx, initialDate: selectedStartDate, firstDate: DateTime(2020), lastDate: DateTime(2100));
+                    if (picked != null) setS(() => selectedStartDate = picked);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(12)),
+                    child: Row(children: [
+                      const Icon(Icons.calendar_today, size: 18, color: Colors.blueGrey),
+                      const SizedBox(width: 12),
+                      Text('${selectedStartDate.year}-${selectedStartDate.month.toString().padLeft(2,'0')}-${selectedStartDate.day.toString().padLeft(2,'0')}', style: GoogleFonts.outfit(fontSize: 16)),
+                    ]),
+                  ),
+                ),
+                const SizedBox(height: 28),
+                Row(children: [
+                  Expanded(child: OutlinedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                    child: const Text('取消'),
+                  )),
+                  const SizedBox(width: 12),
+                  Expanded(flex: 2, child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                    onPressed: () {
+                      int target;
+                      if (selectedType == GoalType.time) {
+                        final h = int.tryParse(hoursCtrl.text) ?? 0;
+                        final m = int.tryParse(minsCtrl.text) ?? 0;
+                        target = h * 3600 + m * 60;
+                        if (target <= 0) { _showError('請填寫時間目標'); return; }
+                      } else if (selectedType == GoalType.task) {
+                        target = int.tryParse(countCtrl.text) ?? 0;
+                        if (target <= 0) { _showError('請填寫目標次數'); return; }
+                      } else {
+                        target = 1;
+                      }
+                      Navigator.pop(ctx);
+                      if (selectedType == GoalType.time) {
+                        final newId = ref.read(goalProvider.notifier).addGoal(
+                          selectedCategory, target, selectedPeriod,
+                          title: selectedCategory, type: selectedType, startDate: selectedStartDate,
+                        );
+                        ref.read(goalOrderProvider.notifier).ensureContains(newId);
+                        _showApplyHistoryDialog(newId, selectedCategory);
+                      } else {
+                        ref.read(taskGoalProvider.notifier).addGoal(
+                          selectedCategory, target, selectedPeriod,
+                          title: selectedCategory, type: selectedType, startDate: selectedStartDate,
+                        );
+                        _showSuccess('目標「$selectedCategory」已建立 ✨');
                       }
                     },
-                  ),
-                  const SizedBox(height: 20),
+                    child: Text('建立目標', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold)),
+                  )),
+                ]),
+              ],
+            ),
+          ),
+        );
+      }),
+    );
+  }
 
-              Text('目標週期 (Period)', style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: SegmentedButton<GoalPeriod>(
-                  segments: const [
-                    ButtonSegment(value: GoalPeriod.daily, label: Text('日', style: TextStyle(fontSize: 18))),
-                    ButtonSegment(value: GoalPeriod.weekly, label: Text('週', style: TextStyle(fontSize: 18))),
-                    ButtonSegment(value: GoalPeriod.monthly, label: Text('月', style: TextStyle(fontSize: 18))),
-                    ButtonSegment(value: GoalPeriod.yearly, label: Text('年', style: TextStyle(fontSize: 18))),
+  Widget _typeChip(GoalType type, String label, GoalType selected, ValueChanged<GoalType> onTap) {
+    final isSelected = type == selected;
+    return ChoiceChip(
+      label: Text(label, style: GoogleFonts.outfit(fontWeight: FontWeight.w500)),
+      selected: isSelected,
+      onSelected: (_) => onTap(type),
+      selectedColor: Colors.blue.shade100,
+      side: BorderSide(color: isSelected ? Colors.blue : Colors.grey.shade300),
+    );
+  }
+
+  Widget _bigField(TextEditingController ctrl, String label, String suffix) {
+    return TextField(
+      controller: ctrl,
+      keyboardType: TextInputType.number,
+      style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold),
+      decoration: InputDecoration(
+        labelText: label, suffixText: suffix,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      ),
+    );
+  }
+
+  void _showApplyHistoryDialog(String goalId, String category) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('📊 套用過去計時紀錄？'),
+          content: Text('是否要根據「$category」項目過去的計時紀錄，自動填入目標月曆？'),
+          actions: [
+            TextButton(onPressed: () { Navigator.pop(ctx); _showSuccess('目標「$category」已建立 ✨'); }, child: const Text('不套用')),
+            ElevatedButton(
+              onPressed: () {
+                ref.read(goalProvider.notifier).recalculateHistoryFromSessions(goalId);
+                Navigator.pop(ctx);
+                _showSuccess('已套用歷史紀錄 📊');
+              },
+              child: const Text('套用歷史紀錄'),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  // ──────────────────────────────────────────────────────
+  // 編輯目標 Dialog
+  // ──────────────────────────────────────────────────────
+  void _showEditGoalDialog(Goal goal) {
+    final titleCtrl = TextEditingController(text: goal.title);
+    GoalPeriod selectedPeriod = goal.period;
+    DateTime selectedStartDate = goal.startDate;
+    final hoursCtrl = TextEditingController(text: goal.type == GoalType.time ? (goal.targetSeconds ~/ 3600).toString() : goal.targetSeconds.toString());
+    final minsCtrl = TextEditingController(text: goal.type == GoalType.time ? ((goal.targetSeconds % 3600) ~/ 60).toString() : '0');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setS) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('編輯目標', style: GoogleFonts.outfit(fontSize: 22, fontWeight: FontWeight.bold)),
+              const Divider(height: 28),
+              TextField(controller: titleCtrl, style: GoogleFonts.outfit(fontSize: 16),
+                decoration: InputDecoration(labelText: '目標名稱', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14))),
+              const SizedBox(height: 20),
+              Text('統計週期', style: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade600)),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(12)),
+                child: DropdownButton<GoalPeriod>(value: selectedPeriod, isExpanded: true, underline: const SizedBox(),
+                  items: const [
+                    DropdownMenuItem(value: GoalPeriod.daily, child: Text('每日')),
+                    DropdownMenuItem(value: GoalPeriod.weekly, child: Text('每週')),
+                    DropdownMenuItem(value: GoalPeriod.monthly, child: Text('每月')),
+                    DropdownMenuItem(value: GoalPeriod.yearly, child: Text('每年')),
                   ],
-                  selected: {selectedPeriod},
-                  onSelectionChanged: (val) => setModalState(() => selectedPeriod = val.first),
-                ),
+                  onChanged: (v) => setS(() => selectedPeriod = v!)),
               ),
               const SizedBox(height: 20),
-
-              Text('目標類型 (Type)', style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'time', label: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.timer_outlined, size: 20), SizedBox(width: 8), Text('時間型')])),
-                    ButtonSegment(value: 'task_base', label: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.task_alt, size: 20), SizedBox(width: 8), Text('任務型')])),
-                  ],
-                  selected: {selectedType == GoalType.time ? 'time' : 'task_base'},
-                  onSelectionChanged: (val) {
-                    setModalState(() {
-                      if (val.first == 'time') {
-                        selectedType = GoalType.time;
-                      } else {
-                        // Default to binary when first clicking Task-based
-                        if (selectedType == GoalType.time) selectedType = GoalType.binary;
-                      }
-                    });
-                  },
-                ),
-              ),
-              if (selectedType != GoalType.time) ...[
-                const SizedBox(height: 16),
-                Center(
-                  child: SegmentedButton<GoalType>(
-                    style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                    segments: const [
-                      ButtonSegment(value: GoalType.binary, label: Text('是非型 (Yes/No)', style: TextStyle(fontSize: 13))),
-                      ButtonSegment(value: GoalType.task, label: Text('次數型 (Counts)', style: TextStyle(fontSize: 13))),
-                    ],
-                    selected: {selectedType},
-                    onSelectionChanged: (val) => setModalState(() => selectedType = val.first),
-                  ),
-                ),
+              if (goal.type == GoalType.time) ...[
+                Text('每期目標時數', style: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade600)),
+                const SizedBox(height: 8),
+                Row(children: [Expanded(child: _bigField(hoursCtrl, '小時', '時')), const SizedBox(width: 12), Expanded(child: _bigField(minsCtrl, '分鐘', '分'))]),
+              ] else if (goal.type == GoalType.task) ...[
+                Text('每期目標次數', style: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade600)),
+                const SizedBox(height: 8),
+                _bigField(hoursCtrl, '次數', '次'),
               ],
               const SizedBox(height: 20),
-
-              if (selectedType == GoalType.time) ...[
-                Text('目標時間 (Target Time)', style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: hoursController,
-                        keyboardType: TextInputType.number,
-                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                        decoration: InputDecoration(
-                          labelText: '小時',
-                          labelStyle: const TextStyle(fontSize: 16),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: TextField(
-                        controller: minutesController,
-                        keyboardType: TextInputType.number,
-                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                        decoration: InputDecoration(
-                          labelText: '分鐘',
-                          labelStyle: const TextStyle(fontSize: 16),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ] else if (selectedType == GoalType.task) ...[
-                 Text('目標次數 (Target Counts)', style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
-                 const SizedBox(height: 10),
-                 TextField(
-                    controller: hoursController, // Reusing hoursController for total units
-                    keyboardType: TextInputType.number,
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                    decoration: InputDecoration(
-                      labelText: '設定本週期的目標總次數',
-                      hintText: '例如：5 (次)、10 (公里)...',
-                      labelStyle: const TextStyle(fontSize: 16),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      prefixIcon: const Icon(Icons.numbers_outlined),
-                    ),
-                  ),
-              ] else ...[
-                // Binary (Yes/No)
-                 Text('目標設定 (Yes/No Goal)', style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
-                 const SizedBox(height: 10),
-                 Container(
-                   padding: const EdgeInsets.all(16),
-                   decoration: BoxDecoration(
-                     color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.1),
-                     borderRadius: BorderRadius.circular(12),
-                     border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.2)),
-                   ),
-                   child: Row(
-                     children: [
-                       Icon(Icons.info_outline, color: Theme.of(context).colorScheme.primary),
-                       const SizedBox(width: 12),
-                       const Expanded(child: Text('是非型目標只需在日曆中「勾選」即可達成，目標值固定為 1 次。')),
-                     ],
-                   ),
-                 ),
-              ],
-              const SizedBox(height: 20),
-              Text('開始日期 (Start Date)', style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 10),
+              Text('目標起始日', style: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade600)),
+              const SizedBox(height: 8),
               InkWell(
-                onTap: () async { 
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: selectedStartDate,
-                    firstDate: DateTime.now().subtract(const Duration(days: 365 * 10)),
-                    lastDate: DateTime.now().add(const Duration(days: 365)),
-                  );
-                  if (picked != null) setModalState(() => selectedStartDate = picked);
+                onTap: () async {
+                  final picked = await showDatePicker(context: ctx, initialDate: selectedStartDate, firstDate: DateTime(2020), lastDate: DateTime(2100));
+                  if (picked != null) setS(() => selectedStartDate = picked);
                 },
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: isEditing ? Theme.of(context).disabledColor.withOpacity(0.05) : null,
-                    border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.calendar_today, size: 18, color: Theme.of(context).colorScheme.primary),
-                      const SizedBox(width: 12),
-                      Text(
-                        '${selectedStartDate.year}/${selectedStartDate.month.toString().padLeft(2, '0')}/${selectedStartDate.day.toString().padLeft(2, '0')}',
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      const Spacer(),
-                      const Icon(Icons.arrow_drop_down),
-                    ],
-                  ),
+                  decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(12)),
+                  child: Row(children: [
+                    const Icon(Icons.calendar_today, size: 18, color: Colors.blueGrey),
+                    const SizedBox(width: 12),
+                    Text('${selectedStartDate.year}-${selectedStartDate.month.toString().padLeft(2,'0')}-${selectedStartDate.day.toString().padLeft(2,'0')}', style: GoogleFonts.outfit(fontSize: 16)),
+                  ]),
                 ),
               ),
-               if (isEditing) ...[
-                 const Divider(height: 32),
-                 SizedBox(
-                   width: double.infinity,
-                   child: OutlinedButton.icon(
-                     onPressed: () async {
-                       final res = await showDialog<bool>(
-                         context: context,
-                         builder: (ctx) => AlertDialog(
-                           title: const Text('確認重新掃描歷史？'),
-                           content: const Text('這將根據您原始的「計時紀錄」重新計算過往每一天的產出，所有手動修改過的筆記都會被覆蓋。此動作無法復原，確認執行？'),
-                           actions: [
-                             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-                             ElevatedButton(
-                               onPressed: () => Navigator.pop(ctx, true),
-                               style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade50),
-                               child: Text('確認掃描', style: TextStyle(color: Colors.red.shade700)),
-                             ),
-                           ],
-                         ),
-                       );
-
-                       if (res == true) {
-                         ref.read(goalProvider.notifier).rescanGoalHistory(existingGoal!.id);
-                         Navigator.pop(ctx);
-                         _showSuccessSnackBar('✅ 歷史紀錄已重新校準');
-                       }
-                     },
-                     icon: const Icon(Icons.history_toggle_off, size: 20),
-                     label: const Text('重新掃描與校正歷史紀錄', style: TextStyle(fontWeight: FontWeight.bold)),
-                     style: OutlinedButton.styleFrom(
-                       foregroundColor: Colors.grey.shade700,
-                       side: BorderSide(color: Colors.grey.shade300),
-                       padding: const EdgeInsets.symmetric(vertical: 12),
-                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                     ),
-                   ),
-                 ),
-                 const SizedBox(height: 16),
-               ],
-
-              SizedBox(
-                width: double.infinity,
-                height: 60,
-                child: ElevatedButton(
-                  onPressed: () async {
-                    final isTask = selectedType == GoalType.task;
-                    final isBinary = selectedType == GoalType.binary;
-                    final hrs = int.tryParse(hoursController.text) ?? 0;
-                    final mins = int.tryParse(minutesController.text) ?? 0;
-                    
-                    int totalValue = 0;
-                    if (isBinary) {
-                      totalValue = 1;
-                    } else if (isTask) {
-                      totalValue = hrs;
+              const SizedBox(height: 28),
+              Row(children: [
+                Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(ctx), style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)), child: const Text('取消'))),
+                const SizedBox(width: 12),
+                Expanded(flex: 2, child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                  onPressed: () {
+                    int target;
+                    if (goal.type == GoalType.time) {
+                      final h = int.tryParse(hoursCtrl.text) ?? 0;
+                      final m = int.tryParse(minsCtrl.text) ?? 0;
+                      target = h * 3600 + m * 60;
+                      if (target <= 0) { _showError('請填寫時間目標'); return; }
+                    } else if (goal.type == GoalType.task) {
+                      target = int.tryParse(hoursCtrl.text) ?? 0;
+                      if (target <= 0) { _showError('請填寫目標次數'); return; }
+                    } else { target = 1; }
+                    final updated = goal.copyWith(title: titleCtrl.text.isNotEmpty ? titleCtrl.text : goal.category, period: selectedPeriod, targetSeconds: target, startDate: selectedStartDate);
+                    if (selectedStartDate != goal.startDate && goal.type == GoalType.time) {
+                      Navigator.pop(ctx); _showRecalculateDialog(updated);
                     } else {
-                      totalValue = (hrs * 3600) + (mins * 60);
-                    }
-                    
-                    if (totalValue > 0) {
-                      if (isEditing) {
-                        final updatedGoal = existingGoal!.copyWith(
-                          period: selectedPeriod,
-                          type: selectedType,
-                          targetSeconds: totalValue,
-                          startDate: selectedStartDate,
-                        );
-
-                        bool shouldRebackfill = false;
-                        final durationChanged = existingGoal.targetSeconds != updatedGoal.targetSeconds;
-                        final dateChanged = !DateUtils.isSameDay(existingGoal.startDate, updatedGoal.startDate);
-
-                        if (durationChanged || dateChanged) {
-                          final res = await showDialog<bool>(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: const Text('目標設定已變更'),
-                              content: Text(dateChanged 
-                                ? '您修改了目標的開始日期，是否要根據新日期重新掃描並計算過去的達成歷史？' 
-                                : '您修改了目標的時長標準，是否要根據新標準重新計算過去的達成歷史？'),
-                              actions: [
-                                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('保留現狀 (Keep)')),
-                                ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('重新掃描歷史')),
-                              ],
-                            ),
-                          );
-                          shouldRebackfill = res ?? false;
-                        }
-
-                        ref.read(goalProvider.notifier).updateGoal(updatedGoal, rebackfill: shouldRebackfill);
-                        Navigator.pop(ctx);
-                        _showSuccessSnackBar('✅ 目標已更新');
-                      } else {
-                        ref.read(goalProvider.notifier).addGoal(
-                          safeCategory,
-                          totalValue,
-                          selectedPeriod,
-                          type: selectedType,
-                          startDate: selectedStartDate,
-                        );
-                        Navigator.pop(ctx);
-                        _showSuccessSnackBar('✅ 目標已建立項目');
-                      }
+                      if (goal.type == GoalType.time) ref.read(goalProvider.notifier).updateGoal(updated);
+                      else ref.read(taskGoalProvider.notifier).updateGoal(updated);
+                      Navigator.pop(ctx); _showSuccess('目標已更新');
                     }
                   },
-                  style: ElevatedButton.styleFrom(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  ),
-                  child: Text(isEditing ? '確認更新' : '確認建立', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                ),
-              ),
-            ], // Close children
-          ), // Close Column
-        ); // Close Container
-            },
-          ); // Close StatefulBuilder
-    }, // Close Consumer builder
-  ), // Close Consumer
-); // Close showModalBottomSheet
-}
-
-  void _showSuccessSnackBar(String msg) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg, style: const TextStyle(fontSize: 15)), 
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 1500),
-        ),
-      );
-  }
-
-  void _triggerMilestoneSurprise(Goal goal) {
-    String msg = '';
-    switch (goal.lastMilestone) {
-      case 25: msg = '🎉 初試身手！"${goal.category}" 已達成 25%！'; break;
-      case 50: msg = '🔥 保持火熱！"${goal.category}" 已達成一半！'; break;
-      case 75: msg = '🚀 快要到了！"${goal.category}" 已達成 75%！'; break;
-      case 100: msg = '🏆 榮耀時刻！"${goal.category}" 已圓滿達成！'; break;
-    }
-    
-    if (msg.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          backgroundColor: Theme.of(context).colorScheme.primary,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          duration: const Duration(milliseconds: 1500),
-        ),
-      );
-      _confettiController.play();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Listen for milestone achievements
-    ref.listen<List<Goal>>(goalProvider, (previous, next) {
-      if (previous == null) return;
-      for (var nextGoal in next) {
-        final prevGoal = previous.firstWhere((g) => g.id == nextGoal.id, orElse: () => nextGoal);
-        if (nextGoal.lastMilestone > prevGoal.lastMilestone) {
-          _triggerMilestoneSurprise(nextGoal);
-        }
-      }
-    });
-
-    final goals = ref.watch(visibleGoalsProvider);
-
-    return Stack(
-      children: [
-        Scaffold(
-          backgroundColor: Colors.transparent,
-          appBar: AppBar(
-            title: Text('專注目標', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            actions: [
-              Padding(
-                padding: const EdgeInsets.only(right: 8.0, top: 8.0, bottom: 8.0),
-                child: FilledButton.tonalIcon(
-                  onPressed: () => _showGoalFormDialog(),
-                  icon: const Icon(Icons.add_circle_outline, size: 18),
-                  label: const Text('新增目標', style: TextStyle(fontWeight: FontWeight.bold)),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                  ),
-                ),
-              ),
+                  child: Text('確認更新', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold)),
+                )),
+              ]),
             ],
           ),
-          body: goals.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+        ),
+      )),
+    );
+  }
+
+  void showDeleteGoalDialog(Goal goal) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('確認刪除目標'),
+        content: Text('確定要永久移除「${goal.title}」這個目標嗎？\n\n計時紀錄不受影響。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              ref.read(goalOrderProvider.notifier).remove(goal.id);
+              if (goal.type == GoalType.time) ref.read(goalProvider.notifier).deleteGoal(goal.id);
+              else ref.read(taskGoalProvider.notifier).deleteGoal(goal.id);
+              Navigator.pop(ctx);
+              _showSuccess('目標已刪除');
+            },
+            child: const Text('確認刪除', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRecalculateDialog(Goal updatedGoal) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('起始日期已變更'),
+        content: const Text('是否根據過去的計時紀錄，自動重算目標達成狀況？'),
+        actions: [
+          TextButton(onPressed: () { ref.read(goalProvider.notifier).updateGoal(updatedGoal); Navigator.pop(ctx); }, child: const Text('僅更新日期')),
+          ElevatedButton(
+            onPressed: () {
+              ref.read(goalProvider.notifier).updateGoal(updatedGoal);
+              ref.read(goalProvider.notifier).recalculateHistoryFromSessions(updatedGoal.id);
+              Navigator.pop(ctx); _showSuccess('已根據歷史紀錄重新計算 ✨');
+            },
+            child: const Text('套用過去紀錄'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showNoCategoryDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('⚠️ 尚未建立任何項目'),
+        content: const Text('請先在計時頁新增一個計時項目，再回來設定目標。'),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('知道了'))],
+      ),
+    );
+  }
+
+  void _showAddCategoryThenGoal() {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('新增項目類別'),
+        content: TextField(controller: ctrl, decoration: const InputDecoration(hintText: '例如：閱讀 📚、冥想 🧘'), autofocus: true),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          ElevatedButton(
+            onPressed: () {
+              if (ctrl.text.trim().isNotEmpty) {
+                ref.read(categoryColorProvider.notifier).addCategory(ctrl.text.trim(), Colors.blueAccent);
+                Navigator.pop(ctx);
+                _showAddGoalDialog();
+              }
+            },
+            child: const Text('新增並繼續'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSuccess(String msg) => ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(msg), backgroundColor: Colors.green.shade700, behavior: SnackBarBehavior.floating));
+
+  void _showError(String msg) => ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('⚠️ $msg'), backgroundColor: Colors.orange.shade800, behavior: SnackBarBehavior.floating));
+
+  // ──────────────────────────────────────────────────────
+  @override
+  Widget build(BuildContext context) {
+    final timeGoals  = ref.watch(visibleTimeGoalsProvider);
+    final taskGoals  = ref.watch(visibleTaskGoalsProvider);
+    final order      = ref.watch(goalOrderProvider);
+    final allGoals   = _sortedGoals([...timeGoals, ...taskGoals], order);
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: Text('專注目標', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        actions: [
+          // 強制同步按鈕
+          IconButton(
+            onPressed: _forceSync,
+            icon: const Icon(Icons.cloud_sync_outlined),
+            tooltip: '強制從雲端同步',
+          ),
+          IconButton(
+            onPressed: _showAddGoalDialog,
+            icon: const Icon(Icons.add_circle_outline),
+            tooltip: '新增目標',
+          ),
+        ],
+      ),
+      body: allGoals.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.flag_outlined, size: 64, color: Colors.grey.shade400),
+                  const SizedBox(height: 16),
+                  Text('尚無目標，開啟新挑戰吧！', style: TextStyle(color: Colors.grey.shade500, fontSize: 16)),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(onPressed: _showAddGoalDialog, icon: const Icon(Icons.add), label: const Text('建立第一個目標')),
+                ],
+              ),
+            )
+          : ReorderableListView.builder(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+              buildDefaultDragHandles: false,
+              onReorder: (oldIndex, newIndex) => _onReorder(allGoals, oldIndex, newIndex),
+              itemCount: allGoals.length,
+              itemBuilder: (context, index) {
+                final goal = allGoals[index];
+                return Container(
+                  key: ValueKey(goal.id),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.flag_outlined, size: 64, color: Colors.grey.shade400),
-                      const SizedBox(height: 16),
-                      Text('尚未設定目標', style: TextStyle(color: Colors.grey.shade500, fontSize: 16)),
-                      const SizedBox(height: 8),
-                      Text('設定一個目標來挑戰自己吧！', style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
+                      // 專屬拖把區域（只有這個區域可以拖曳）
+                      ReorderableDragStartListener(
+                        index: index,
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 18, right: 4, left: 0),
+                          child: Icon(
+                            Icons.drag_indicator_rounded,
+                            color: Colors.grey.withOpacity(0.5),
+                            size: 22,
+                          ),
+                        ),
+                      ),
+                      // 卡片本體（不參與拖曳）
+                      Expanded(
+                        child: GoalProgressCard(
+                          goal: goal,
+                          onEdit: _showEditGoalDialog,
+                          onDelete: showDeleteGoalDialog,
+                        ),
+                      ),
                     ],
                   ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(20),
-                  itemCount: goals.length,
-                  itemBuilder: (context, index) => GoalProgressCard(
-                    goal: goals[index],
-                    onEdit: (goal) => _showGoalFormDialog(existingGoal: goal),
-                  ),
-                ),
-        ),
-        Align(
-          alignment: Alignment.topCenter,
-          child: ConfettiWidget(
-            confettiController: _confettiController,
-            blastDirectionality: BlastDirectionality.explosive,
-            shouldLoop: false,
-            colors: const [Colors.green, Colors.blue, Colors.pink, Colors.orange, Colors.purple],
-          ),
-        ),
-      ],
+                );
+              },
+            ),
     );
   }
 }

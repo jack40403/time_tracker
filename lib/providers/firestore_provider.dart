@@ -29,9 +29,16 @@ final cloudTimerProvider = StreamProvider<Map<String, dynamic>?>((ref) {
   return service.watchTimerState();
 });
 
-// Stream for cloud goals
+// Stream for cloud goals (Time)
 final cloudGoalsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   final service = ref.watch(firestoreServiceProvider);
   if (service == null) return Stream.value([]);
   return service.watchGoals();
+});
+
+// Stream for cloud goals (Task/Binary)
+final cloudTaskGoalsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
+  final service = ref.watch(firestoreServiceProvider);
+  if (service == null) return Stream.value([]);
+  return service.watchTaskGoals();
 });

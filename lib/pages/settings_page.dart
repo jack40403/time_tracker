@@ -1,6 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import '../services/update_service.dart';
 import '../providers/theme_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/category_provider.dart';
@@ -184,7 +187,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               await ref.read(sessionsProvider.notifier).clearAll();
               ref.read(categoryColorProvider.notifier).resetToTrueZero();
               ref.read(hiddenCategoriesProvider.notifier).clearAll();
-              await ref.read(goalProvider.notifier).clearAllGoals();
+              ref.read(goalProvider.notifier).clearAllGoals();
               ref.read(timerProvider.notifier).resetTimer();
               ref.read(timerColorProvider.notifier).resetToDefault();
               ref.read(backgroundProvider.notifier).reset();
@@ -209,75 +212,78 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
   }
 
-  void _showAddCategoryDialog(BuildContext context) {
-    final controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('新增自定義類別'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: '輸入類別名稱 (例如: 冥想 🧘)'),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          ElevatedButton(
-            onPressed: () {
-              final name = controller.text.trim();
-              if (name.isNotEmpty) {
-                ref.read(categoryColorProvider.notifier).addCategory(name, Colors.blueAccent);
-                Navigator.pop(ctx);
-              }
-            },
-            child: const Text('新增項目'),
-          ),
-        ],
-      ),
-    );
+  void _showAddCategory(BuildContext context) {
+    showAddCategoryDialog(context, ref);
   }
 
-  void _showDeleteCategoryConfirmDialog(BuildContext context, String cat) {
-    showDialog(
+  void _showArchivedCategoriesDialog(BuildContext context) {
+    showModalBottomSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('刪除類別：$cat'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('您要如何處理此類別及其歷史紀錄？', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            const Text('🔹 僅刪除標籤 (保留歷史)', style: TextStyle(fontSize: 14)),
-            const Text('首頁按鈕會消失，但統計圖表仍會保留過去的追蹤紀錄。', style: TextStyle(fontSize: 12, color: Colors.grey)),
-            const Divider(height: 24),
-            const Text('🔸 徹底刪除 (連同歷史)', style: TextStyle(fontSize: 14, color: Colors.red)),
-            Text('此操作會永久刪除所有與 $cat 相關的專注紀錄，無法復原。', style: const TextStyle(fontSize: 12, color: Colors.redAccent)),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              ref.read(categoryColorProvider.notifier).deleteCategory(cat);
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ 已移除類別按鈕：$cat'), behavior: SnackBarBehavior.floating));
-            },
-            child: const Text('僅刪除標籤'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              ref.read(categoryColorProvider.notifier).hardDeleteCategory(cat);
-              ref.read(sessionsProvider.notifier).deleteByCategory(cat);
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('🔥 已徹底清空類別與紀錄：$cat'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, elevation: 0),
-            child: const Text('徹底刪除 (不可恢復)'),
-          ),
-        ],
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (ctx) => Consumer(
+        builder: (ctx, ref, _) {
+          final hidden = ref.watch(hiddenCategoriesProvider).toList();
+          final catColors = ref.watch(categoryColorProvider);
+          
+          return Container(
+            padding: EdgeInsets.only(left: 20, right: 20, top: 12, bottom: MediaQuery.of(ctx).viewInsets.bottom + 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16), decoration: BoxDecoration(color: Colors.grey.withOpacity(0.3), borderRadius: BorderRadius.circular(2))),
+                Text('封存清單管理', style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                const Text('封存項目將從所有頁面隱藏。您可以隨時在此處還原。', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 20),
+                if (hidden.isEmpty)
+                   const Padding(
+                     padding: EdgeInsets.symmetric(vertical: 40),
+                     child: Text('目前沒有任何封存中的項目', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                   )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: hidden.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1, indent: 40),
+                      itemBuilder: (ctx, index) {
+                        final cat = hidden[index];
+                        final color = catColors[cat] ?? Colors.grey;
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                          leading: CircleAvatar(backgroundColor: color, radius: 8),
+                          title: Text(cat, style: const TextStyle(fontWeight: FontWeight.w500)),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              TextButton.icon(
+                                onPressed: () {
+                                  ref.read(hiddenCategoriesProvider.notifier).unhideCategory(cat);
+                                  if (hidden.length <= 1) Navigator.pop(ctx);
+                                },
+                                icon: const Icon(Icons.unarchive_outlined, size: 18),
+                                label: const Text('還原'),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_forever, color: Colors.redAccent, size: 20),
+                                onPressed: () => showDeleteConfirmDialog(context, cat, ref),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('關閉')),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -417,41 +423,26 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       child: OutlinedButton.icon(
                         onPressed: () async {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('正在啟動強制同步...'), duration: Duration(milliseconds: 1000))
+                            const SnackBar(content: Text('🔄 正在從雲端強制讀取數據...'), duration: Duration(seconds: 2))
                           );
                           try {
-                            final error = await ref.read(sessionsProvider.notifier).handleInitialSync();
+                            await ref.read(sessionsProvider.notifier).forceSyncFromCloud();
                             if (mounted) {
-                              if (error == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('✅ 同步成功！'), 
-                                    backgroundColor: Colors.green, 
-                                    behavior: SnackBarBehavior.floating,
-                                    duration: Duration(milliseconds: 1500),
-                                  ),
-                                );
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('❌ 同步失敗: $error'), 
-                                    backgroundColor: Colors.red, 
-                                    behavior: SnackBarBehavior.floating,
-                                    duration: Duration(milliseconds: 1500),
-                                  ),
-                                );
-                              }
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content: Text('✅ 同步完成！共 ${ref.read(sessionsProvider).length} 筆記錄'), 
+                                backgroundColor: Colors.green, 
+                                behavior: SnackBarBehavior.floating,
+                                duration: const Duration(seconds: 3),
+                              ));
                             }
                           } catch (e) {
                             if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('❌ 同步發生異常: $e'), 
-                                  backgroundColor: Colors.red, 
-                                  behavior: SnackBarBehavior.floating,
-                                  duration: Duration(milliseconds: 1500),
-                                ),
-                              );
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content: Text('❌ 同步失敗: $e'), 
+                                backgroundColor: Colors.red, 
+                                behavior: SnackBarBehavior.floating,
+                                duration: const Duration(milliseconds: 1500),
+                              ));
                             }
                           }
                         },
@@ -464,6 +455,77 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
             ),
           ],
+
+          const Divider(indent: 20, endIndent: 20),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
+            child: Row(
+              children: [
+                const Icon(Icons.system_update_alt_outlined, color: Colors.indigo, size: 20),
+                const SizedBox(width: 8),
+                Text('應用程式更新', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.indigo)),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.indigo.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.indigo.withOpacity(0.2)),
+              ),
+              child: Column(
+                children: [
+                  FutureBuilder<PackageInfo>(
+                    future: PackageInfo.fromPlatform(),
+                    builder: (context, snapshot) {
+                      final version = snapshot.data?.version ?? '1.0.0';
+                      final buildNumber = snapshot.data?.buildNumber ?? '1';
+                      return ListTile(
+                        leading: const Icon(Icons.info_outline, color: Colors.indigo),
+                        title: const Text('目前版本', style: TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text('v$version (Build $buildNumber)'),
+                        trailing: OutlinedButton(
+                          onPressed: () async {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('🔍 正在檢查更新...'), duration: Duration(seconds: 1))
+                            );
+                            await ref.read(updateProvider.notifier).checkUpdates();
+                            final status = ref.read(updateProvider);
+                            if (mounted) {
+                              if (status != null && status.isUpdateAvailable) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('✨ 發現新版本！請查看通知進行更新'), backgroundColor: Colors.orange)
+                                );
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('✅ 目前已是最新版本'), backgroundColor: Colors.green)
+                                );
+                              }
+                            }
+                          },
+                          child: const Text('檢查更新'),
+                        ),
+                      );
+                    },
+                  ),
+                  if (kIsWeb)
+                    const ListTile(
+                      leading: Icon(Icons.browser_updated, color: Colors.indigo),
+                      title: Text('熱更新機制', style: TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text('偵測伺服器版本變動自動刷新', style: TextStyle(fontSize: 12)),
+                    )
+                  else
+                    const ListTile(
+                      leading: Icon(Icons.bolt, color: Colors.amber),
+                      title: Text('Shorebird Hot-Push', style: TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text('已啟用背景 Patch 同步', style: TextStyle(fontSize: 12)),
+                    ),
+                ],
+              ),
+            ),
+          ),
 
           const Divider(indent: 20, endIndent: 20),
           const Padding(
@@ -578,10 +640,20 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('類別與顏色管理', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue)),
-                TextButton.icon(
-                  onPressed: () => _showAddCategoryDialog(context),
-                  icon: const Icon(Icons.add_circle_outline, size: 18),
-                  label: const Text('新增項目'),
+                Row(
+                  children: [
+                    TextButton.icon(
+                      onPressed: () => _showArchivedCategoriesDialog(context),
+                      icon: const Icon(Icons.archive_outlined, size: 18, color: Colors.blueGrey),
+                      label: const Text('管理封存', style: TextStyle(color: Colors.blueGrey)),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton.icon(
+                      onPressed: () => _showAddCategory(context),
+                      icon: const Icon(Icons.add_circle_outline, size: 18),
+                      label: const Text('新增項目'),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -598,7 +670,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 children: [
                   for (var entry in catColors.entries)
                     ListTile(
-                      onTap: () => showModernColorPicker(context, '設定 ${entry.key} 的顏色', entry.value, (c) => ref.read(categoryColorProvider.notifier).updateColor(entry.key, c)),
+                      onTap: () => showCategoryOptions(context, entry.key, ref),
                       leading: Container(
                         padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
@@ -609,7 +681,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       ),
                       title: Row(
                         children: [
-                          Text(entry.key, style: const TextStyle(fontWeight: FontWeight.w500)),
+                          Expanded(
+                            child: Text(
+                              entry.key, 
+                              style: const TextStyle(fontWeight: FontWeight.w500),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                           if (hiddenCategories.contains(entry.key))
                             Padding(
                               padding: const EdgeInsets.only(left: 8),
@@ -621,23 +699,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             ),
                         ],
                       ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (hiddenCategories.contains(entry.key))
-                            IconButton(
-                              icon: const Icon(Icons.visibility_off_outlined, size: 18, color: Colors.blue),
-                              onPressed: () => ref.read(categoryColorProvider.notifier).addCategory(entry.key, entry.value),
-                              tooltip: '取消隱藏',
-                            )
-                          else
-                            const Icon(Icons.palette_outlined, size: 18, color: Colors.grey),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
-                            onPressed: () => _showDeleteCategoryConfirmDialog(context, entry.key),
-                          ),
-                        ],
+                      trailing: IconButton(
+                        icon: const Icon(Icons.more_vert),
+                        onPressed: () => showCategoryOptions(context, entry.key, ref),
                       ),
                     ),
                 ],

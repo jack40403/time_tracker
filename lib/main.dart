@@ -4,7 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'firebase_options.dart';
 import 'package:google_fonts/google_fonts.dart';
-
+import 'services/update_service.dart';
 import 'services/background_timer_service.dart';
 import 'services/storage_service.dart';
 import 'providers/layout_provider.dart';
@@ -13,12 +13,27 @@ import 'firebase_options.dart';
 import 'pages/main_screen.dart';
 import 'widgets/background_wrapper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shorebird_code_push/shorebird_code_push.dart' as shorebird_sdk;
 
 // Main Entry Point
 // ==========================================
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize Shorebird separately using named sdk to avoid constructor ambiguity
+  final shorebird = shorebird_sdk.ShorebirdUpdater();
+  
+  // Check for updates automatically on startup if supported
+  if (!kIsWeb && shorebird.isAvailable) {
+    shorebird.readCurrentPatch().then((patch) {
+      if (patch != null) {
+        debugPrint('Elite Tracker Current Shorebird Patch: ${patch.number}');
+      } else {
+        debugPrint('Elite Tracker: No patch installed yet.');
+      }
+    });
+  }
   
   try {
     await Firebase.initializeApp(
@@ -42,6 +57,12 @@ void main() async {
       child: const TimeTrackerApp(),
     ),
   );
+
+  // Passive initial update check
+  Future.delayed(const Duration(seconds: 3), () {
+    final container = ProviderScope.containerOf(WidgetsBinding.instance.rootElement!);
+    container.read(updateProvider.notifier).checkUpdates();
+  });
 }
 
 class TimeTrackerApp extends ConsumerWidget {

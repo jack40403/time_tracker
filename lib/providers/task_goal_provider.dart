@@ -1,19 +1,15 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../models/goal.dart';
-import '../models/time_session.dart';
 import 'storage_provider.dart';
 import 'firestore_provider.dart';
-import 'session_provider.dart';
 import 'category_provider.dart';
-import 'task_goal_provider.dart';
 
-class GoalNotifier extends Notifier<List<Goal>> {
-  static const _storageKey = 'goals_time_v4';
-  static const _tombstoneKey = 'goals_time_tombstones';
+class TaskGoalNotifier extends Notifier<List<Goal>> {
+  static const _storageKey = 'goals_task_v4';
+  static const _tombstoneKey = 'goals_task_tombstones';
   int _lastMutationTime = 0;
   Set<String> _tombstones = {};
 
@@ -28,7 +24,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
 
     final firestore = ref.watch(firestoreServiceProvider);
     if (firestore != null) {
-      ref.listen(cloudGoalsProvider, (previous, next) {
+      ref.listen(cloudTaskGoalsProvider, (previous, next) {
         if (next.hasValue) {
           final List<Goal> remote = next.value!.map((e) => Goal.fromJson(e)).toList();
           final isFirst = previous == null || !previous.hasValue;
@@ -37,15 +33,13 @@ class GoalNotifier extends Notifier<List<Goal>> {
       });
 
       Future.microtask(() {
-        final current = ref.read(cloudGoalsProvider);
+        final current = ref.read(cloudTaskGoalsProvider);
         if (current.hasValue && current.value!.isNotEmpty) {
           final remote = current.value!.map((e) => Goal.fromJson(e)).toList();
           _syncWithCloud(remote, force: true);
         }
-        _checkMilestones();
       });
     }
-
     return _load();
   }
 
@@ -60,12 +54,12 @@ class GoalNotifier extends Notifier<List<Goal>> {
           try {
             loaded.add(Goal.fromJson(e));
           } catch (err) {
-            debugPrint('GoalNotifier: Skipping corrupted goal: $err');
+            debugPrint('TaskGoalNotifier: Skipping corrupted goal: $err');
           }
         }
         return loaded;
-      } catch (e) {
-        debugPrint('GoalNotifier: Error decoding storage: $e');
+      } catch (e) { 
+        debugPrint('TaskGoalNotifier: Error decoding storage: $e');
       }
     }
     return [];
@@ -80,20 +74,19 @@ class GoalNotifier extends Notifier<List<Goal>> {
       _lastMutationTime = DateTime.now().millisecondsSinceEpoch;
       final firestore = ref.read(firestoreServiceProvider);
       if (firestore != null) {
-        await firestore.saveGoals(state);
+        await firestore.saveTaskGoals(state);
       }
     }
   }
 
   void _syncWithCloud(List<Goal> remoteGoals, {bool force = false}) {
     final now = DateTime.now().millisecondsSinceEpoch;
-    // 登入後第一次同步必須強制執行（繞流不中斷）
     if (!force && (now - _lastMutationTime) < 3000) return;
 
-    // 1. 過濾掉本地已刪除（墓碑中）的目標
+    // 1. 過濾掉墓碑名單中的目標
     final List<Goal> filteredRemote = remoteGoals.where((r) => !_tombstones.contains(r.id)).toList();
 
-    // 2. 自動清理墓碑：如果雲端資料中已經不再包含某個墓碑 ID，代表雲端已同步完成刪除，可以移除墓碑
+    // 2. 自動清理墓碑：如果雲端資料中已經不再包含某個墓碑 ID，代表雲端已同步完成
     final Set<String> remoteIds = remoteGoals.map((g) => g.id).toSet();
     final List<String> toRemoveFromTombstone = _tombstones.where((id) => !remoteIds.contains(id)).toList();
     if (toRemoveFromTombstone.isNotEmpty) {
@@ -102,7 +95,6 @@ class GoalNotifier extends Notifier<List<Goal>> {
       storage.prefs.setString(_tombstoneKey, jsonEncode(_tombstones.toList()));
     }
 
-    // 沒有本地數據時直接用雲端數據
     if (state.isEmpty && filteredRemote.isNotEmpty) {
       state = filteredRemote;
       _saveLocal(syncToCloud: false);
@@ -118,7 +110,6 @@ class GoalNotifier extends Notifier<List<Goal>> {
         changed = true;
       } else {
         final local = mergedMap[remote.id]!;
-        // 深度合併 completionHistory：若兩端都有值則取較大值，避免數據覆蓋
         final Map<String, int> localHistory = Map<String, int>.from(local.completionHistory);
         final Map<String, int> remoteHistory = remote.completionHistory;
         bool historyChanged = false;
@@ -144,21 +135,32 @@ class GoalNotifier extends Notifier<List<Goal>> {
   }
 
   // --- API ---
-  String addGoal(String category, int targetSeconds, GoalPeriod period, {String? title, GoalType type = GoalType.time, DateTime? startDate}) {
+  void addGoal(String category, int target, GoalPeriod period, {String? title, GoalType type = GoalType.task, DateTime? startDate}) {
     final newGoal = Goal(
       id: const Uuid().v4(),
       title: title ?? category,
       category: category,
-      targetSeconds: targetSeconds,
+      targetSeconds: target,
       period: period,
       type: type,
       createdAt: DateTime.now(),
       startDate: startDate ?? DateTime.now(),
+      completionHistory: {},
     );
     state = [...state, newGoal];
     _saveLocal();
-    _checkMilestones();
-    return newGoal.id;
+  }
+
+  void addRawGoal(Goal g) {
+    if (!state.any((eg) => eg.id == g.id)) {
+      state = [...state, g];
+      _saveLocal();
+    }
+  }
+
+  void updateGoal(Goal updated) {
+    state = state.map((g) => g.id == updated.id ? updated : g).toList();
+    _saveLocal();
   }
 
   void forceMergeFromCloud(List<Goal> remoteGoals) {
@@ -178,12 +180,6 @@ class GoalNotifier extends Notifier<List<Goal>> {
     _saveLocal();
   }
 
-  void clearAllGoals() {
-    _addTombstones(state.map((g) => g.id).toList());
-    state = [];
-    _saveLocal();
-  }
-
   void _addTombstones(List<String> ids) {
     if (ids.isEmpty) return;
     _tombstones.addAll(ids);
@@ -196,14 +192,8 @@ class GoalNotifier extends Notifier<List<Goal>> {
     _saveLocal();
   }
 
-  void updateGoal(Goal updated) {
-    state = state.map((g) => g.id == updated.id ? updated : g).toList();
-    _saveLocal();
-    _checkMilestones();
-  }
-
   void setManualValue(String id, DateTime date, int val) {
-    final dateKey = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    final dateKey = _formatDate(date);
     state = state.map((g) {
       if (g.id == id) {
         final history = Map<String, int>.from(g.completionHistory);
@@ -215,100 +205,33 @@ class GoalNotifier extends Notifier<List<Goal>> {
     _saveLocal();
   }
 
-  void recalculateHistoryFromSessions(String goalId) {
-    state = state.map((goal) {
-      if (goal.id == goalId) {
-        final sessions = ref.read(sessionsProvider);
-        final newHistory = <String, int>{};
-        
-        for (var s in sessions) {
-          if (s.category == goal.category) {
-            final d = s.date.toLocal();
-            // 僅統計起始日期之後的數據
-            if (d.isBefore(goal.startDate.subtract(const Duration(seconds: 1)))) continue;
-            
-            final String dateKey = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-            newHistory[dateKey] = (newHistory[dateKey] ?? 0) + s.durationSeconds;
-          }
-        }
-        return goal.copyWith(completionHistory: newHistory);
+  void toggleManualCompletion(String id, DateTime date) {
+    final dateKey = _formatDate(date);
+    state = state.map((g) {
+      if (g.id == id) {
+        final history = Map<String, int>.from(g.completionHistory);
+        history[dateKey] = (history[dateKey] ?? 0) > 0 ? 0 : 1;
+        return g.copyWith(completionHistory: history);
       }
-      return goal;
+      return g;
     }).toList();
     _saveLocal();
   }
 
-  double getProgress(Goal goal, {DateTime? atDate}) {
-    final targetDate = atDate ?? DateTime.now();
-    final allSessions = ref.read(sessionsProvider);
-    final String cat = goal.category;
-    int currentSeconds = 0;
-
-    for (var s in allSessions) {
-      if (s.category == cat) {
-        final d = s.date.toLocal();
-        // 關鍵核心：僅統計起始日期之後的數據
-        if (d.isBefore(goal.startDate.subtract(const Duration(seconds: 1)))) continue;
-        
-        bool match = false;
-        if (goal.period == GoalPeriod.daily) {
-          match = d.year == targetDate.year && d.month == targetDate.month && d.day == targetDate.day;
-        } else if (goal.period == GoalPeriod.weekly) {
-          final monday = targetDate.subtract(Duration(days: targetDate.weekday - 1));
-          final start = DateTime(monday.year, monday.month, monday.day);
-          final end = DateTime(targetDate.year, targetDate.month, targetDate.day, 23, 59, 59);
-          match = d.isAfter(start.subtract(const Duration(seconds: 1))) && d.isBefore(end);
-        } else if (goal.period == GoalPeriod.monthly) {
-          match = d.year == targetDate.year && d.month == targetDate.month;
-        } else if (goal.period == GoalPeriod.yearly) {
-          match = d.year == targetDate.year;
-        }
-        if (match) currentSeconds += s.durationSeconds;
-      }
-    }
-
-    if (goal.targetSeconds <= 0) return 1.0;
-    return (currentSeconds / goal.targetSeconds).clamp(0.0, 1.0);
-  }
-
-  void _checkMilestones() {
-    final sessions = ref.read(sessionsProvider);
-    final now = DateTime.now();
-    bool hasChanged = false;
-
-    final newList = state.map((goal) {
-      final history = Map<String, int>.from(goal.completionHistory);
-      final dailySeconds = sessions
-          .where((s) => s.category == goal.category && s.date.toLocal().year == now.year && s.date.toLocal().month == now.month && s.date.toLocal().day == now.day)
-          .fold(0, (sum, s) => sum + s.durationSeconds);
-      
-      final String dateKey = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-      if (history[dateKey] != dailySeconds) {
-        hasChanged = true;
-        history[dateKey] = dailySeconds;
-        return goal.copyWith(completionHistory: history);
-      }
-      return goal;
-    }).toList();
-
-    if (hasChanged) {
-      state = newList;
-      _saveLocal();
-    }
+  double getProgress(Goal goal) {
+     final nowStr = _formatDate(DateTime.now());
+     final current = goal.completionHistory[nowStr] ?? 0;
+     if (goal.type == GoalType.binary) return current > 0 ? 1.0 : 0.0;
+     if (goal.targetSeconds <= 0) return 1.0;
+     return (current / goal.targetSeconds).clamp(0.0, 1.0);
   }
 
   String getRemainingText(Goal goal) {
-    final progress = getProgress(goal);
-    if (progress >= 1.0) return '已達成！ 🎉';
-    final now = DateTime.now();
-    final dateKey = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    final currentToday = goal.completionHistory[dateKey] ?? 0;
-    final remainingSeconds = goal.targetSeconds - currentToday;
-    if (remainingSeconds <= 0) return '已達成！ 🎉';
-    final hrs = remainingSeconds ~/ 3600;
-    final mins = (remainingSeconds % 3600) ~/ 60;
-    if (hrs > 0) return '還差 ${hrs}h ${mins}m';
-    return '還差 ${mins}m';
+     final prog = getProgress(goal);
+     if (prog >= 1.0) return '已達成！ 🎉';
+     final current = goal.completionHistory[_formatDate(DateTime.now())] ?? 0;
+     if (goal.type == GoalType.binary) return '今日尚未完成';
+     return '還差 ${goal.targetSeconds - current} 單位';
   }
 
   Map<String, String> getRecords(Goal goal) {
@@ -323,15 +246,13 @@ class GoalNotifier extends Notifier<List<Goal>> {
     if (sortedDates.isEmpty) return {'historical': '0 天連續', 'monthly': '0 天連續', 'historical_date': '', 'monthly_date': ''};
 
     final now = DateTime.now();
-    final todayStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    final monthPrefix = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+    final monthPrefix = _formatDate(DateTime(now.year, now.month, 1)).substring(0, 7);
 
-    // 取得起始日（或是最早有紀錄的那天）
+    // 取得起始日
     DateTime cursor = goal.startDate;
-    final firstRecord = DateTime.parse(sortedDates.first);
-    if (firstRecord.isBefore(cursor)) cursor = firstRecord;
+    final firstRecord = DateTime.tryParse(sortedDates.first.replaceAll('/', '-')); // 支援不同格式解析
+    if (firstRecord != null && firstRecord.isBefore(cursor)) cursor = firstRecord;
     
-    // 確保 cursor 是凌晨 0 點
     cursor = DateTime(cursor.year, cursor.month, cursor.day);
 
     int maxAllStreak = 0;
@@ -342,9 +263,8 @@ class GoalNotifier extends Notifier<List<Goal>> {
     int currentMonthStreak = 0;
     String maxMonthEndDate = '';
 
-    // 逐日遍歷直到今天，確保中斷的天數會重置 Streak
     while (!cursor.isAfter(now)) {
-      final dateKey = '${cursor.year}-${cursor.month.toString().padLeft(2, '0')}-${cursor.day.toString().padLeft(2, '0')}';
+      final dateKey = _formatDate(cursor);
       final val = goal.completionHistory[dateKey] ?? 0;
       final isMeetingGoal = val >= goal.targetSeconds;
 
@@ -369,7 +289,6 @@ class GoalNotifier extends Notifier<List<Goal>> {
           currentMonthStreak = 0;
         }
       }
-
       cursor = cursor.add(const Duration(days: 1));
     }
 
@@ -380,12 +299,14 @@ class GoalNotifier extends Notifier<List<Goal>> {
       'monthly_date': maxMonthEndDate.isEmpty ? '尚無紀錄' : '最後達成: $maxMonthEndDate',
     };
   }
+
+  String _formatDate(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 }
 
-final goalProvider = NotifierProvider<GoalNotifier, List<Goal>>(() => GoalNotifier());
+final taskGoalProvider = NotifierProvider<TaskGoalNotifier, List<Goal>>(() => TaskGoalNotifier());
 
-final visibleTimeGoalsProvider = Provider<List<Goal>>((ref) {
-  final all = ref.watch(goalProvider);
+final visibleTaskGoalsProvider = Provider<List<Goal>>((ref) {
+  final all = ref.watch(taskGoalProvider);
   final hiddenGoals = ref.watch(goalsHiddenCategoriesProvider);
   final hiddenGlobal = ref.watch(hiddenCategoriesProvider);
   return all.where((g) => g.isActive && !hiddenGoals.contains(g.category) && !hiddenGlobal.contains(g.category)).toList();
