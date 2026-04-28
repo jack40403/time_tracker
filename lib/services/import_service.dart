@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import '../models/time_session.dart';
 
 class JiffyImportService {
@@ -18,36 +19,47 @@ class JiffyImportService {
       final Map<String, String> categoryMap = {};
       for (var owner in timeOwners) {
         String rawName = owner['name'] ?? '未分類';
-        // Fix potential encoding issues (Mojibake fix)
-        String fixedName = _fixEncoding(rawName);
         
         // Final mapping bridge
+        String fixedName = _fixEncoding(rawName);
         categoryMap[owner['id']] = _customMapping[fixedName] ?? fixedName;
       }
 
       final List<TimeSession> sessions = [];
       for (var entry in timeEntries) {
+        // --- 1. Filter out deleted or draft entries ---
+        if (entry['status'] == 'DELETED') continue;
+
         final String? ownerId = entry['owner_id'];
         if (ownerId == null) continue;
 
         final String category = categoryMap[ownerId] ?? '已刪除分類';
-        final int? startMs = entry['start_time'];
-        final int? stopMs = entry['stop_time'];
+        
+        final dynamic rawStart = entry['start_time'];
+        final dynamic rawStop = entry['stop_time'];
 
-        if (startMs != null && stopMs != null) {
-          final int duration = (stopMs - startMs) ~/ 1000;
-          if (duration > 0) {
-            sessions.add(TimeSession(
-              category: category,
-              durationSeconds: duration,
-              date: DateTime.fromMillisecondsSinceEpoch(startMs),
-            ));
-          }
+        // --- 2. Robust Time Parsing ---
+        if (rawStart is! num || rawStop is! num) continue;
+        
+        // Jiffy represents unfinished or broken entries with -1
+        final int startMs = rawStart.toInt();
+        final int stopMs = rawStop.toInt();
+
+        if (stopMs <= startMs || stopMs <= 0) continue;
+
+        final int duration = (stopMs - startMs) ~/ 1000;
+        if (duration > 0) {
+          sessions.add(TimeSession(
+            category: category,
+            durationSeconds: duration,
+            date: DateTime.fromMillisecondsSinceEpoch(startMs),
+            note: entry['note'] as String?,
+          ));
         }
       }
       return sessions;
     } catch (e) {
-      print('JiffyImportService Error: $e');
+      debugPrint('JiffyImportService Error: $e');
       return [];
     }
   }
@@ -55,15 +67,20 @@ class JiffyImportService {
   /// Attempts to fix common encoding issues (Latin-1 read as UTF-8 mojibake).
   static String _fixEncoding(String input) {
     try {
-      // If the string contains characters that look like Latin-1 misintepretations of UTF-8.
-      // Example: "å­¸ç¿" -> "學習"
+      // 檢測是否包含明顯的 UTF-8 位元特徵被誤讀為 Latin-1
+      // 常見於從 Android 導出到不同語系的系統
       List<int> bytes = input.codeUnits;
-      // Only attempt fix if we see high-byte characters common in mojibake
-      if (bytes.any((b) => b > 127 && b < 256)) {
-        return utf8.decode(bytes);
+      
+      // 如果所有位元都在 0-255 範圍內，則可能是編碼錯誤
+      if (bytes.every((b) => b >= 0 && b <= 255)) {
+        // 嘗試將 Latin-1 轉回 UTF-8
+        String decoded = utf8.decode(bytes);
+        if (decoded.length < input.length) {
+           return decoded; // 如果解碼後長度變短（多位元組合），通常是成功的
+        }
       }
     } catch (_) {
-      // If decoding fails, return original
+      // 失敗時返回原始字串
     }
     return input;
   }

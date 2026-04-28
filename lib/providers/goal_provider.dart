@@ -8,6 +8,7 @@ import 'storage_provider.dart';
 import 'firestore_provider.dart';
 import 'session_provider.dart';
 import 'category_provider.dart';
+import '../services/notification_service.dart';
 
 class GoalNotifier extends Notifier<List<Goal>> {
   static const _storageKey = 'goals_time_v4';
@@ -18,7 +19,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
   @override
   List<Goal> build() {
     // 載入墓碑清單
-    final storage = ref.read(storageServiceProvider);
+    final storage = ref.watch(storageServiceProvider);
     final tombstoneJson = storage.prefs.getString(_tombstoneKey);
     if (tombstoneJson != null) {
       _tombstones = Set<String>.from(jsonDecode(tombstoneJson));
@@ -95,6 +96,17 @@ class GoalNotifier extends Notifier<List<Goal>> {
     }
   }
 
+  Future<void> saveAll(List<Goal> goals) async {
+    state = goals;
+    _saveLocal();
+    final firestore = ref.read(firestoreServiceProvider);
+    if (firestore != null) {
+      for (var goal in goals) {
+        await firestore.saveGoal(goal, isTaskGoal: false);
+      }
+    }
+  }
+
   void _syncWithCloud(List<Goal> remoteGoals, {bool force = false}) {
     final now = DateTime.now().millisecondsSinceEpoch;
     // 登入後第一次同步必須強制執行（繞流不中斷）
@@ -157,22 +169,34 @@ class GoalNotifier extends Notifier<List<Goal>> {
   }
 
   // --- API ---
-  String addGoal(String category, int targetSeconds, GoalPeriod period, {String? title, GoalType type = GoalType.time, DateTime? startDate}) {
+  String addGoal(String category, int targetSeconds, GoalPeriod period, {
+    String? title, 
+    GoalType type = GoalType.time, 
+    DateTime? startDate,
+    String? reminderTime,
+    bool isReminderEnabled = false,
+  }) {
     final newGoal = Goal(
       id: const Uuid().v4(),
       title: title ?? category,
       category: category,
       targetSeconds: targetSeconds,
       period: period,
-      type: type, // 修正：傳遞正確類型
+      type: type,
       isActive: true,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
       startDate: startDate ?? DateTime.now(),
+      reminderTime: reminderTime,
+      isReminderEnabled: isReminderEnabled,
     );
     state = [...state, newGoal];
     _saveSingleLocal(newGoal);
     _checkMilestones();
+    
+    // 安排鬧鐘提醒
+    NotificationService.scheduleGoalReminder(newGoal);
+    
     return newGoal.id;
   }
 
@@ -186,6 +210,9 @@ class GoalNotifier extends Notifier<List<Goal>> {
     _addTombstones([id]);
     state = state.where((g) => g.id != id).toList();
     _saveSingleLocal(goal, isDelete: true);
+    
+    // 取消鬧鐘提醒
+    NotificationService.cancelGoalReminder(id);
   }
 
   Future<void> deleteGoalsByCategory(String category) async {
@@ -230,6 +257,14 @@ class GoalNotifier extends Notifier<List<Goal>> {
     _tombstones.clear();
   }
 
+  Future<void> restoreFromBackup(List<Goal> goals) async {
+    state = goals;
+    _saveLocal();
+    _tombstones.clear();
+    final storage = ref.read(storageServiceProvider);
+    storage.prefs.remove(_tombstoneKey);
+  }
+
   void renameCategory(String oldCat, String newCat) {
     final updated = state.map((g) {
       if (g.category == oldCat) {
@@ -253,6 +288,9 @@ class GoalNotifier extends Notifier<List<Goal>> {
     state = state.map((g) => g.id == withTimestamp.id ? withTimestamp : g).toList();
     _saveSingleLocal(withTimestamp);
     _checkMilestones();
+
+    // 更新鬧鐘提醒
+    NotificationService.scheduleGoalReminder(withTimestamp);
   }
 
   void setManualValue(String id, DateTime date, int val) {
@@ -292,6 +330,38 @@ class GoalNotifier extends Notifier<List<Goal>> {
     }).toList();
     // 單點更新，不再全量推送
     if (updated != null) _saveSingleLocal(updated!);
+  }
+
+  void recalculateAllGoalsHistory() {
+    final sessions = ref.read(sessionsProvider);
+    bool changed = false;
+    
+    final newState = state.map((goal) {
+      if (goal.type != GoalType.time) return goal;
+      
+      final newHistory = <String, int>{};
+      for (var s in sessions) {
+        if (s.category == goal.category) {
+          final d = s.date.toLocal();
+          if (d.isBefore(goal.startDate.subtract(const Duration(seconds: 1)))) continue;
+          final String dateKey = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+          newHistory[dateKey] = (newHistory[dateKey] ?? 0) + s.durationSeconds;
+        }
+      }
+      
+      // 比對歷史記錄是否有變動，避免無謂的更新
+      if (mapEquals(newHistory, goal.completionHistory)) return goal;
+      
+      changed = true;
+      return goal.copyWith(completionHistory: newHistory, updatedAt: DateTime.now());
+    }).toList();
+
+    if (changed) {
+      state = newState;
+      _saveLocal();
+      // 此處不逐一推送到雲端（批量更新時改用一次性本地快取存檔，待下次單點操作再同步）
+      // 或者您可以選擇循環調用 _saveSingleLocal，但在這裡頻繁調用雲端可能過載
+    }
   }
 
   double getProgress(Goal goal, {DateTime? atDate}) {
@@ -377,17 +447,29 @@ class GoalNotifier extends Notifier<List<Goal>> {
     };
     
     final sortedDates = goal.completionHistory.keys.toList()..sort();
-    if (sortedDates.isEmpty) return {'historical': '0 天連續', 'monthly': '0 天連續', 'historical_date': '', 'monthly_date': ''};
+    final unit = goal.period == GoalPeriod.daily ? '天' : goal.period == GoalPeriod.weekly ? '週' : goal.period == GoalPeriod.monthly ? '月' : '次';
+
+    if (sortedDates.isEmpty) return {
+      'historical': '0 $unit連續', 
+      'monthly': '0 $unit連續', 
+      'historical_date': '', 
+      'monthly_date': ''
+    };
 
     final now = DateTime.now();
-    final monthPrefix = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+    final today = DateTime(now.year, now.month, now.day);
 
-    // 取得起始日（或是最早有紀錄的那天）
+    // 取得起始日
     DateTime cursor = goal.startDate;
     final firstRecord = DateTime.parse(sortedDates.first);
     if (firstRecord.isBefore(cursor)) cursor = firstRecord;
     
-    // 確保 cursor 是凌晨 0 點
+    // 根據週期正規化起始點
+    if (goal.period == GoalPeriod.weekly) {
+      cursor = cursor.subtract(Duration(days: cursor.weekday - 1));
+    } else if (goal.period == GoalPeriod.monthly) {
+      cursor = DateTime(cursor.year, cursor.month, 1);
+    }
     cursor = DateTime(cursor.year, cursor.month, cursor.day);
 
     int maxAllStreak = 0;
@@ -398,43 +480,89 @@ class GoalNotifier extends Notifier<List<Goal>> {
     int currentMonthStreak = 0;
     String maxMonthEndDate = '';
 
-    // 逐日遍歷直到今天，確保中斷的天數會重置 Streak
     while (!cursor.isAfter(now)) {
-      final dateKey = '${cursor.year}-${cursor.month.toString().padLeft(2, '0')}-${cursor.day.toString().padLeft(2, '0')}';
-      final val = goal.completionHistory[dateKey] ?? 0;
-      final isMeetingGoal = val >= goal.targetSeconds;
+      int totalInPeriod = 0;
+      DateTime periodEnd;
+      String currentPeriodEndKey = '';
+
+      if (goal.period == GoalPeriod.weekly) {
+        periodEnd = cursor.add(const Duration(days: 6));
+        for (int i = 0; i < 7; i++) {
+          final d = cursor.add(Duration(days: i));
+          final key = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+          totalInPeriod += goal.completionHistory[key] ?? 0;
+        }
+        currentPeriodEndKey = '${periodEnd.year}-${periodEnd.month.toString().padLeft(2, '0')}-${periodEnd.day.toString().padLeft(2, '0')}';
+      } else if (goal.period == GoalPeriod.monthly) {
+        periodEnd = DateTime(cursor.year, cursor.month + 1, 0);
+        final days = periodEnd.day;
+        for (int i = 0; i < days; i++) {
+          final d = cursor.add(Duration(days: i));
+          final key = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+          totalInPeriod += goal.completionHistory[key] ?? 0;
+        }
+        currentPeriodEndKey = '${cursor.year}-${cursor.month.toString().padLeft(2, '0')}';
+      } else {
+        final key = '${cursor.year}-${cursor.month.toString().padLeft(2, '0')}-${cursor.day.toString().padLeft(2, '0')}';
+        totalInPeriod = goal.completionHistory[key] ?? 0;
+        currentPeriodEndKey = key;
+        periodEnd = cursor;
+      }
+
+      final isMeetingGoal = totalInPeriod >= goal.targetSeconds;
 
       if (isMeetingGoal) {
         currentAllStreak++;
         if (currentAllStreak > maxAllStreak) {
           maxAllStreak = currentAllStreak;
-          maxAllEndDate = dateKey;
+          maxAllEndDate = currentPeriodEndKey;
         }
       } else {
-        currentAllStreak = 0;
+        // 如果週期已結束且沒達標，則重置連續紀錄
+        if (periodEnd.isBefore(today)) {
+          currentAllStreak = 0;
+        }
       }
 
-      if (dateKey.startsWith(monthPrefix)) {
+      // 本月最佳統計
+      if (cursor.year == now.year && cursor.month == now.month) {
         if (isMeetingGoal) {
           currentMonthStreak++;
           if (currentMonthStreak > maxMonthStreak) {
             maxMonthStreak = currentMonthStreak;
-            maxMonthEndDate = dateKey;
+            maxMonthEndDate = currentPeriodEndKey;
           }
         } else {
-          currentMonthStreak = 0;
+          if (periodEnd.isBefore(today)) {
+            currentMonthStreak = 0;
+          }
         }
       }
 
-      cursor = cursor.add(const Duration(days: 1));
+      if (goal.period == GoalPeriod.weekly) {
+        cursor = cursor.add(const Duration(days: 7));
+      } else if (goal.period == GoalPeriod.monthly) {
+        cursor = DateTime(cursor.year, cursor.month + 1, 1);
+      } else {
+        cursor = cursor.add(const Duration(days: 1));
+      }
     }
 
     return {
-      'historical': '$maxAllStreak 天連續',
+      'historical': '$maxAllStreak $unit連續',
       'historical_date': maxAllEndDate.isEmpty ? '尚無紀錄' : '最後達成: $maxAllEndDate',
-      'monthly': '$maxMonthStreak 天連續',
+      'monthly': '$maxMonthStreak $unit連續',
       'monthly_date': maxMonthEndDate.isEmpty ? '尚無紀錄' : '最後達成: $maxMonthEndDate',
     };
+  }
+
+  Future<void> syncNow() async {
+    final firestore = ref.read(firestoreServiceProvider);
+    if (firestore == null) return;
+    
+    for (var goal in state) {
+      await firestore.saveGoal(goal, isTaskGoal: false);
+    }
   }
 }
 

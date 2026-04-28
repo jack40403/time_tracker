@@ -16,6 +16,14 @@ class GoalsPage extends ConsumerStatefulWidget {
 }
 
 class _GoalsPageState extends ConsumerState<GoalsPage> {
+  @override
+  void initState() {
+    super.initState();
+    // 進入頁面時自動抓取歷史紀錄套入目標
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+       ref.read(goalProvider.notifier).recalculateAllGoalsHistory();
+    });
+  }
 
   // ── 用排序後的 ID 列表組合顯示順序
   List<Goal> _sortedGoals(List<Goal> all, List<String> order) {
@@ -80,18 +88,23 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
   // ──────────────────────────────────────────────────────
   // 新增目標 Dialog
   // ──────────────────────────────────────────────────────
-  void _showAddGoalDialog() {
+  void _showAddGoalDialog({String? initialCategory}) {
+    final visibleCategories = ref.read(goalsVisibleCategoriesProvider);
     final catColors = ref.read(categoryColorProvider);
-    final allCategories = catColors.keys.toList();
-    if (allCategories.isEmpty) { _showNoCategoryDialog(); return; }
+    if (visibleCategories.isEmpty) { _showNoCategoryDialog(); return; }
 
-    String selectedCategory = allCategories.first;
+    String selectedCategory = initialCategory ?? visibleCategories.first;
+    if (initialCategory != null && !visibleCategories.contains(initialCategory)) {
+      selectedCategory = visibleCategories.first;
+    }
     GoalType selectedType = GoalType.time;
     GoalPeriod selectedPeriod = GoalPeriod.daily;
     DateTime selectedStartDate = DateTime.now();
     final hoursCtrl  = TextEditingController(text: '1');
     final minsCtrl   = TextEditingController(text: '0');
     final countCtrl  = TextEditingController(text: '5');
+    bool isReminderEnabled = false;
+    TimeOfDay selectedReminderTime = const TimeOfDay(hour: 9, minute: 0);
 
     showDialog(
       context: context,
@@ -118,7 +131,7 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
                         child: DropdownButton<String>(
                           value: selectedCategory, isExpanded: true, underline: const SizedBox(),
                           style: GoogleFonts.outfit(fontSize: 16, color: Colors.black87),
-                          items: allCategories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                          items: visibleCategories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
                           onChanged: (v) => setS(() => selectedCategory = v!),
                         ),
                       ),
@@ -191,6 +204,66 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
                     ]),
                   ),
                 ),
+                const SizedBox(height: 20),
+                // --- 提醒時間設定 ---
+                Row(
+                  children: [
+                    Text('開啟提醒', style: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade600)),
+                    const Spacer(),
+                    Switch(
+                      value: isReminderEnabled,
+                      onChanged: (v) => setS(() => isReminderEnabled = v),
+                    ),
+                  ],
+                ),
+                if (isReminderEnabled) ...[
+                  const SizedBox(height: 8),
+                  InkWell(
+                    onTap: () async {
+                      final picked = await showTimePicker(context: ctx, initialTime: selectedReminderTime);
+                      if (picked != null) setS(() => selectedReminderTime = picked);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(12)),
+                      child: Row(children: [
+                        const Icon(Icons.access_time, size: 18, color: Colors.blueGrey),
+                        const SizedBox(width: 12),
+                        Text('提醒時間: ${selectedReminderTime.format(context)}', style: GoogleFonts.outfit(fontSize: 16)),
+                      ]),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                // --- 提醒時間設定 ---
+                Row(
+                  children: [
+                    Text('開啟提醒', style: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade600)),
+                    const Spacer(),
+                    Switch(
+                      value: isReminderEnabled,
+                      onChanged: (v) => setS(() => isReminderEnabled = v),
+                    ),
+                  ],
+                ),
+                if (isReminderEnabled) ...[
+                  const SizedBox(height: 8),
+                  InkWell(
+                    onTap: () async {
+                      final picked = await showTimePicker(context: ctx, initialTime: selectedReminderTime);
+                      if (picked != null) setS(() => selectedReminderTime = picked);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(12)),
+                      child: Row(children: [
+                        const Icon(Icons.access_time, size: 18, color: Colors.blueGrey),
+                        const SizedBox(width: 12),
+                        Text('提醒時間: ${selectedReminderTime.format(context)}', style: GoogleFonts.outfit(fontSize: 16)),
+                      ]),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 28),
                 Row(children: [
                   Expanded(child: OutlinedButton(
@@ -219,6 +292,8 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
                         final newId = ref.read(goalProvider.notifier).addGoal(
                           selectedCategory, target, selectedPeriod,
                           title: selectedCategory, type: selectedType, startDate: selectedStartDate,
+                          reminderTime: isReminderEnabled ? '${selectedReminderTime.hour.toString().padLeft(2, "0")}:${selectedReminderTime.minute.toString().padLeft(2, "0")}' : null,
+                          isReminderEnabled: isReminderEnabled,
                         );
                         ref.read(goalOrderProvider.notifier).ensureContains(newId);
                         _showApplyHistoryDialog(newId, selectedCategory);
@@ -226,6 +301,8 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
                         ref.read(taskGoalProvider.notifier).addGoal(
                           selectedCategory, target, selectedPeriod,
                           title: selectedCategory, type: selectedType, startDate: selectedStartDate,
+                          reminderTime: isReminderEnabled ? '${selectedReminderTime.hour.toString().padLeft(2, "0")}:${selectedReminderTime.minute.toString().padLeft(2, "0")}' : null,
+                          isReminderEnabled: isReminderEnabled,
                         );
                         _showSuccess('目標「$selectedCategory」已建立 ✨');
                       }
@@ -297,6 +374,12 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
     DateTime selectedStartDate = goal.startDate;
     final hoursCtrl = TextEditingController(text: goal.type == GoalType.time ? (goal.targetSeconds ~/ 3600).toString() : goal.targetSeconds.toString());
     final minsCtrl = TextEditingController(text: goal.type == GoalType.time ? ((goal.targetSeconds % 3600) ~/ 60).toString() : '0');
+    bool isReminderEnabled = goal.isReminderEnabled;
+    TimeOfDay selectedReminderTime = const TimeOfDay(hour: 9, minute: 0);
+    if (goal.reminderTime != null) {
+      final parts = goal.reminderTime!.split(':');
+      selectedReminderTime = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+    }
 
     showDialog(
       context: context,
@@ -356,6 +439,36 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
                   ]),
                 ),
               ),
+              const SizedBox(height: 20),
+              // --- 提醒時間設定 ---
+              Row(
+                children: [
+                  Text('開啟提醒', style: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade600)),
+                  const Spacer(),
+                  Switch(
+                    value: isReminderEnabled,
+                    onChanged: (v) => setS(() => isReminderEnabled = v),
+                  ),
+                ],
+              ),
+              if (isReminderEnabled) ...[
+                const SizedBox(height: 8),
+                InkWell(
+                  onTap: () async {
+                    final picked = await showTimePicker(context: ctx, initialTime: selectedReminderTime);
+                    if (picked != null) setS(() => selectedReminderTime = picked);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(12)),
+                    child: Row(children: [
+                      const Icon(Icons.access_time, size: 18, color: Colors.blueGrey),
+                      const SizedBox(width: 12),
+                      Text('提醒時間: ${selectedReminderTime.format(context)}', style: GoogleFonts.outfit(fontSize: 16)),
+                    ]),
+                  ),
+                ),
+              ],
               const SizedBox(height: 28),
               Row(children: [
                 Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(ctx), style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)), child: const Text('取消'))),
@@ -373,7 +486,14 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
                       target = int.tryParse(hoursCtrl.text) ?? 0;
                       if (target <= 0) { _showError('請填寫目標次數'); return; }
                     } else { target = 1; }
-                    final updated = goal.copyWith(title: titleCtrl.text.isNotEmpty ? titleCtrl.text : goal.category, period: selectedPeriod, targetSeconds: target, startDate: selectedStartDate);
+                    final updated = goal.copyWith(
+                      title: titleCtrl.text.isNotEmpty ? titleCtrl.text : goal.category, 
+                      period: selectedPeriod, 
+                      targetSeconds: target, 
+                      startDate: selectedStartDate,
+                      reminderTime: isReminderEnabled ? '${selectedReminderTime.hour.toString().padLeft(2, "0")}:${selectedReminderTime.minute.toString().padLeft(2, "0")}' : null,
+                      isReminderEnabled: isReminderEnabled,
+                    );
                     if (selectedStartDate != goal.startDate && goal.type == GoalType.time) {
                       Navigator.pop(ctx); _showRecalculateDialog(updated);
                     } else {
@@ -459,10 +579,11 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
           ElevatedButton(
             onPressed: () {
-              if (ctrl.text.trim().isNotEmpty) {
-                ref.read(categoryColorProvider.notifier).addCategory(ctrl.text.trim(), Colors.blueAccent);
+              final newCat = ctrl.text.trim();
+              if (newCat.isNotEmpty) {
+                ref.read(categoryColorProvider.notifier).addCategory(newCat, Colors.blueAccent);
                 Navigator.pop(ctx);
-                _showAddGoalDialog();
+                _showAddGoalDialog(initialCategory: newCat);
               }
             },
             child: const Text('新增並繼續'),

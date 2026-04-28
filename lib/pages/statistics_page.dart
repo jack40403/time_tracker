@@ -11,8 +11,8 @@ import '../widgets/bar_chart_demo.dart';
 import '../widgets/elite_date_range_picker.dart';
 import 'category_detail_page.dart';
 import '../helpers/format_utils.dart';
-
 import '../helpers/filter_utils.dart';
+import '../helpers/responsive_helper.dart';
 
 class StatisticsPage extends ConsumerWidget {
   const StatisticsPage({super.key});
@@ -20,7 +20,7 @@ class StatisticsPage extends ConsumerWidget {
   Widget _buildFilterChip(String value, String label, String currentFilter, WidgetRef ref, BuildContext context) {
     final isSelected = currentFilter == value;
     return ChoiceChip(
-      label: Text(label, style: TextStyle(fontSize: 14, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+      label: Text(label, style: TextStyle(fontSize: ResponsiveHelper.sp(context, 14), fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
       selected: isSelected,
       showCheckmark: false,
       onSelected: (val) async {
@@ -180,7 +180,13 @@ class StatisticsPage extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 32),
-            Text('時間分配', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text(
+              '時間分配',
+              style: GoogleFonts.outfit(
+                fontSize: ResponsiveHelper.sp(context, 18),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             const SizedBox(height: 20),
             if (totalSeconds == 0)
               Center(child: Padding(padding: const EdgeInsets.all(40), child: Text('此區段無紀錄', style: TextStyle(color: Colors.grey.shade400))))
@@ -196,11 +202,33 @@ class StatisticsPage extends ConsumerWidget {
                 ),
                 child: Column(
                   children: [
-                    Text(categoryFilter, style: GoogleFonts.outfit(fontSize: 24, fontWeight: FontWeight.bold, color: catColors[categoryFilter])),
+                    Text(
+                      categoryFilter,
+                      style: GoogleFonts.outfit(
+                        fontSize: ResponsiveHelper.sp(context, 24),
+                        fontWeight: FontWeight.bold,
+                        color: catColors[categoryFilter],
+                      ),
+                    ),
                     const SizedBox(height: 8),
-                    Text(FormatUtils.formatDurationDetailed(totalSeconds), style: GoogleFonts.shareTechMono(fontSize: 36, fontWeight: FontWeight.bold)),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        FormatUtils.formatDurationDetailed(totalSeconds),
+                        style: GoogleFonts.shareTechMono(
+                          fontSize: ResponsiveHelper.sp(context, 36),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 4),
-                    Text('佔比 ${((totalSeconds / globalTotalTotal) * 100).toStringAsFixed(1)}%', style: TextStyle(color: Colors.grey.shade600)),
+                    Text(
+                      '佔比 ${((totalSeconds / globalTotalTotal) * 100).toStringAsFixed(1)}%',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: ResponsiveHelper.sp(context, 14),
+                      ),
+                    ),
                   ],
                 ),
               )
@@ -213,6 +241,39 @@ class StatisticsPage extends ConsumerWidget {
                       height: 200,
                       child: PieChart(
                         PieChartData(
+                          pieTouchData: PieTouchData(
+                            touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                              if (!event.isInterestedForInteractions || pieTouchResponse == null || pieTouchResponse.touchedSection == null) {
+                                return;
+                              }
+                              final index = pieTouchResponse.touchedSection!.touchedSectionIndex;
+                              if (index < 0 || index >= categoryTotals.length) return;
+                              
+                              final entry = categoryTotals.entries.elementAt(index);
+                              final categoryName = entry.key;
+                              final seconds = entry.value;
+
+                              // Show info on tap (not hover)
+                              if (event is FlTapUpEvent) {
+                                ScaffoldMessenger.of(context).clearSnackBars();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Row(
+                                      children: [
+                                        Container(width: 12, height: 12, decoration: BoxDecoration(color: catColors[categoryName], shape: BoxShape.circle)),
+                                        const SizedBox(width: 12),
+                                        Text('$categoryName: ', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                        Text(FormatUtils.formatDurationDetailed(seconds)),
+                                      ],
+                                    ),
+                                    behavior: SnackBarBehavior.floating,
+                                    duration: const Duration(seconds: 2),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                );
+                              }
+                            },
+                          ),
                           sectionsSpace: 2,
                           centerSpaceRadius: 40,
                           sections: categoryTotals.entries.map((e) {
@@ -224,9 +285,9 @@ class StatisticsPage extends ConsumerWidget {
                             return PieChartSectionData(
                               color: catColors[e.key] ?? Colors.grey,
                               value: e.value.toDouble(),
-                              title: percentage > 5 ? '${percentage.toStringAsFixed(0)}%\n$timeLabel' : '',
+                              title: percentage > 12 ? '${percentage.toStringAsFixed(0)}%' : '',
                               radius: 62,
-                              titleStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white, height: 1.2),
+                              titleStyle: TextStyle(fontSize: ResponsiveHelper.sp(context, 12), fontWeight: FontWeight.bold, color: Colors.white),
                             );
                           }).toList(),
                         ),
@@ -262,7 +323,13 @@ class StatisticsPage extends ConsumerWidget {
               child: BarChartDemo(sessions: allSessions, filter: filter, offset: offset),
             ),
             const SizedBox(height: 40),
-            Text('詳細項目', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text(
+              '詳細項目',
+              style: GoogleFonts.outfit(
+                fontSize: ResponsiveHelper.sp(context, 18),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             const SizedBox(height: 16),
             ...categoryTotals.entries.map((e) {
               final color = catColors[e.key] ?? Colors.grey;
@@ -270,6 +337,24 @@ class StatisticsPage extends ConsumerWidget {
                 margin: const EdgeInsets.only(bottom: 12),
                 child: InkWell(
                   onTap: () {
+                    // Show time info popup
+                    ScaffoldMessenger.of(context).clearSnackBars();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Row(
+                          children: [
+                             Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                             const SizedBox(width: 12),
+                             Text('${e.key}: ', style: const TextStyle(fontWeight: FontWeight.bold)),
+                             Text(FormatUtils.formatDurationDetailed(e.value)),
+                          ],
+                        ),
+                        behavior: SnackBarBehavior.floating,
+                        duration: const Duration(seconds: 2),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    );
+
                     if (categoryFilter == e.key) {
                       Navigator.push(context, MaterialPageRoute(builder: (_) => CategoryDetailPage(category: e.key)));
                     } else {
@@ -283,8 +368,23 @@ class StatisticsPage extends ConsumerWidget {
                           children: [
                             Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
                             const SizedBox(width: 16),
-                            Expanded(child: Text(e.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18), overflow: TextOverflow.ellipsis)),
-                            Text(FormatUtils.formatDuration(e.value), style: GoogleFonts.shareTechMono(color: Theme.of(context).colorScheme.primary, fontSize: 18)),
+                            Expanded(
+                              child: Text(
+                                e.key,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: ResponsiveHelper.sp(context, 18),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Text(
+                              FormatUtils.formatDuration(e.value),
+                              style: GoogleFonts.shareTechMono(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontSize: ResponsiveHelper.sp(context, 18),
+                              ),
+                            ),
                             const SizedBox(width: 12),
                             const Icon(Icons.chevron_right_rounded, size: 24, color: Colors.grey),
                           ],

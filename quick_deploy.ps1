@@ -1,0 +1,59 @@
+# Elite Time Tracker - Pro Deploy Script v3 (Ultra Robust)
+
+Write-Host "--- [1/5] Building Android APK... ---" -ForegroundColor Cyan
+C:\flutter\bin\flutter.bat build apk --release
+
+Write-Host "--- [2/5] Cleaning and Preparing Web Folder... ---" -ForegroundColor Cyan
+if (Test-Path "build/web") { Remove-Item -Recurse -Force "build/web" }
+
+Write-Host "--- [3/5] Extracting Version and Updating pubspec.yaml... ---" -ForegroundColor Cyan
+$pubContent = Get-Content "pubspec.yaml" -Raw
+if ($pubContent -match "version: (\d+\.\d+\.\d+)\+(\d+)") {
+    $versionName = $Matches[1]
+    $buildNumber = [int]$Matches[2] + 1
+    $newVersion = "$versionName+$buildNumber"
+    $pubContent = $pubContent -replace "version: \d+\.\d+\.\d+\+\d+", "version: $newVersion"
+    $pubContent | Out-File "pubspec.yaml" -Encoding UTF8
+    Write-Host "New Version: $newVersion" -ForegroundColor Yellow
+}
+
+Write-Host "--- [4/5] Building Web... ---" -ForegroundColor Cyan
+C:\flutter\bin\flutter.bat build web --release --pwa-strategy=none
+
+Write-Host "--- [5/5] POST-BUILD SYNC (THE FORCE STEP) ---" -ForegroundColor Cyan
+# 1. 確保圖示絕對正確 (從 assets 拷貝到 build/web/icons)
+$iconPath = "assets/icon/app_icon.png"
+if (Test-Path $iconPath) {
+    if (!(Test-Path "build/web/icons")) { New-Item -ItemType Directory "build/web/icons" -Force }
+    Copy-Item $iconPath "build/web/icons/Icon-192.png" -Force
+    Copy-Item $iconPath "build/web/icons/Icon-512.png" -Force
+    Copy-Item $iconPath "build/web/icons/Icon-maskable-192.png" -Force
+    Copy-Item $iconPath "build/web/icons/Icon-maskable-512.png" -Force
+    Copy-Item $iconPath "build/web/icons/final_logo.png" -Force
+    Write-Host "✅ Icons synced to build folder." -ForegroundColor Green
+}
+
+# 2. 確保 APK 絕對正確 (從 build/app 拷貝到 build/web)
+$apkPath = "build/app/outputs/flutter-apk/app-release.apk"
+if (Test-Path $apkPath) {
+    Copy-Item $apkPath "build/web/app-release.apk" -Force
+    Write-Host "✅ APK synced to build folder." -ForegroundColor Green
+}
+
+# 3. 生成正確的 version.json (加入時間戳防止快取)
+$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+$versionJson = @"
+{
+  "version": "$versionName",
+  "buildNumber": "$buildNumber",
+  "url": "https://metimegoalgoal.web.app/app-release.apk",
+  "changelog": "v$versionName (Build $buildNumber): 新增「專注之環」桌面小組件與通知欄即時控制按鈕。",
+  "timestamp": "$timestamp"
+}
+"@
+$versionJson | Out-File "build/web/version.json" -Encoding ASCII
+Write-Host "✅ version.json generated: v$versionName+$buildNumber" -ForegroundColor Green
+
+Write-Host "--- FINISHING: Deploying to Firebase ---" -ForegroundColor Cyan
+firebase.cmd deploy --only hosting
+Write-Host "--- DONE! Please refresh your browser (Ctrl+F5) ---" -ForegroundColor Magenta

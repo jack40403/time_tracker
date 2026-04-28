@@ -9,6 +9,7 @@ import '../widgets/bar_chart_demo.dart';
 import 'statistics_page.dart';
 import '../helpers/format_utils.dart';
 import '../helpers/filter_utils.dart';
+import '../helpers/responsive_helper.dart';
 
 class CategoryDetailPage extends ConsumerWidget {
   final String category;
@@ -71,9 +72,16 @@ class CategoryDetailPage extends ConsumerWidget {
                     style: TextStyle(color: catColor.withOpacity(0.8), fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1.2),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    FormatUtils.formatDurationDetailed(totalSeconds),
-                    style: GoogleFonts.shareTechMono(fontSize: 48, fontWeight: FontWeight.bold, color: catColor),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      FormatUtils.formatDurationDetailed(totalSeconds),
+                      style: GoogleFonts.shareTechMono(
+                        fontSize: ResponsiveHelper.sp(context, 48),
+                        fontWeight: FontWeight.bold,
+                        color: catColor,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text('區段總計時間', style: TextStyle(color: catColor.withOpacity(0.6), fontSize: 14)),
@@ -86,7 +94,13 @@ class CategoryDetailPage extends ConsumerWidget {
               children: [
                 const Icon(Icons.bar_chart_rounded, size: 20),
                 const SizedBox(width: 8),
-                Text('趨勢分析', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold)),
+                Text(
+                  '趨勢分析',
+                  style: GoogleFonts.outfit(
+                    fontSize: ResponsiveHelper.sp(context, 18),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 20),
@@ -106,7 +120,13 @@ class CategoryDetailPage extends ConsumerWidget {
               children: [
                 const Icon(Icons.history_rounded, size: 20),
                 const SizedBox(width: 8),
-                Text('詳細歷史紀錄', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold)),
+                Text(
+                  '詳細歷史紀錄',
+                  style: GoogleFonts.outfit(
+                    fontSize: ResponsiveHelper.sp(context, 18),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 16),

@@ -4,21 +4,27 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/time_session.dart';
 
 class StorageService {
+  final String? uid;
+  final SharedPreferences _prefs;
+
+  StorageService(this._prefs, {this.uid});
+
+  // Helper to generate User-Specific Key
+  String _pk(String key) => uid == null ? key : '${uid}_$key';
+
   static const String _sessionsKey = 'sessions';
   static const String _categoryColorsKey = 'category_colors';
   static const String _timerColorKey = 'timer_color';
   static const String _themeModeKey = 'theme_mode';
-  static const String _timerStateKey = 'timer_state_v2'; // V2 for simplified state
+  static const String _timerStateKey = 'timer_state_v2';
   static const String _layoutModeKey = 'app_layout_mode';
 
-  final SharedPreferences _prefs;
   SharedPreferences get prefs => _prefs;
-  StorageService(this._prefs);
 
   // --- Sessions ---
   List<TimeSession>? loadSessions() {
-    final raw = _prefs.getString(_sessionsKey);
-    if (raw == null) return null; // First Run
+    final raw = _prefs.getString(_pk(_sessionsKey));
+    if (raw == null) return null;
     try {
       final List<dynamic> list = jsonDecode(raw);
       return list.map((e) => TimeSession.fromJson(e)).toList();
@@ -30,12 +36,12 @@ class StorageService {
 
   Future<void> saveSessions(List<TimeSession> sessions) async {
     final encoded = jsonEncode(sessions.map((s) => s.toJson()).toList());
-    await _prefs.setString(_sessionsKey, encoded);
+    await _prefs.setString(_pk(_sessionsKey), encoded);
   }
 
   // --- Category Colors ---
   Map<String, Color> loadCategoryColors(Map<String, Color> defaults) {
-    final raw = _prefs.getString(_categoryColorsKey);
+    final raw = _prefs.getString(_pk(_categoryColorsKey));
     if (raw == null) return Map.from(defaults);
     try {
       final Map<String, dynamic> decoded = jsonDecode(raw);
@@ -48,28 +54,28 @@ class StorageService {
 
   Future<void> saveCategoryColors(Map<String, Color> colors) async {
     final encoded = jsonEncode(colors.map((k, v) => MapEntry(k, v.value)));
-    await _prefs.setString(_categoryColorsKey, encoded);
+    await _prefs.setString(_pk(_categoryColorsKey), encoded);
   }
 
   // --- Timer Color ---
   Color loadTimerColor(Color defaultColor) {
-    final val = _prefs.getInt(_timerColorKey);
+    final val = _prefs.getInt(_pk(_timerColorKey));
     return val != null ? Color(val) : defaultColor;
   }
 
   Future<void> saveTimerColor(Color color) async {
-    await _prefs.setInt(_timerColorKey, color.value);
+    await _prefs.setInt(_pk(_timerColorKey), color.value);
   }
 
   // --- Theme Mode ---
   ThemeMode loadThemeMode() {
-    final index = _prefs.getInt(_themeModeKey);
+    final index = _prefs.getInt(_pk(_themeModeKey));
     if (index == null) return ThemeMode.system;
     return ThemeMode.values[index];
   }
 
   Future<void> saveThemeMode(ThemeMode mode) async {
-    await _prefs.setInt(_themeModeKey, mode.index);
+    await _prefs.setInt(_pk(_themeModeKey), mode.index);
   }
 
   // --- Custom Background ---
@@ -80,27 +86,27 @@ class StorageService {
 
   Map<String, dynamic> loadBackgroundSettings() {
     return {
-      'color': _prefs.getInt(_bgColorKey),
-      'image': _prefs.getString(_bgImageKey),
-      'isCustom': _prefs.getBool(_bgIsCustomKey) ?? false,
-      'opacity': _prefs.getDouble(_bgOpacityKey) ?? 0.2,
+      'color': _prefs.getInt(_pk(_bgColorKey)),
+      'image': _prefs.getString(_pk(_bgImageKey)),
+      'isCustom': _prefs.getBool(_pk(_bgIsCustomKey)) ?? false,
+      'opacity': _prefs.getDouble(_pk(_bgOpacityKey)) ?? 0.2,
     };
   }
 
   Future<void> saveBackgroundSettings(int? color, String? image, bool isCustom, double opacity) async {
-    if (color != null) await _prefs.setInt(_bgColorKey, color);
-    else await _prefs.remove(_bgColorKey);
+    if (color != null) await _prefs.setInt(_pk(_bgColorKey), color);
+    else await _prefs.remove(_pk(_bgColorKey));
     
-    if (image != null) await _prefs.setString(_bgImageKey, image);
-    else await _prefs.remove(_bgImageKey);
+    if (image != null) await _prefs.setString(_pk(_bgImageKey), image);
+    else await _prefs.remove(_pk(_bgImageKey));
     
-    await _prefs.setBool(_bgIsCustomKey, isCustom);
-    await _prefs.setDouble(_bgOpacityKey, opacity);
+    await _prefs.setBool(_pk(_bgIsCustomKey), isCustom);
+    await _prefs.setDouble(_pk(_bgOpacityKey), opacity);
   }
 
   // --- Timer State ---
   Map<String, dynamic>? loadTimerState() {
-    final raw = _prefs.getString(_timerStateKey);
+    final raw = _prefs.getString(_pk(_timerStateKey));
     if (raw == null) return null;
     try {
       return jsonDecode(raw) as Map<String, dynamic>;
@@ -115,45 +121,46 @@ class StorageService {
   static const String _lastUpdatedKey = 'last_updated_at';
 
   int loadLastUpdated() {
-    return _prefs.getInt(_lastUpdatedKey) ?? 0;
+    return _prefs.getInt(_pk(_lastUpdatedKey)) ?? 0;
   }
 
   Future<void> saveLastUpdated(int timestamp) async {
-    await _prefs.setInt(_lastUpdatedKey, timestamp);
+    await _prefs.setInt(_pk(_lastUpdatedKey), timestamp);
   }
 
   List<String> loadHiddenCategories() {
-    return _prefs.getStringList(_hiddenCategoriesKey) ?? [];
+    return _prefs.getStringList(_pk(_hiddenCategoriesKey)) ?? [];
   }
 
   Future<void> saveHiddenCategories(List<String> categories) async {
-    await _prefs.setStringList(_hiddenCategoriesKey, categories);
+    await _prefs.setStringList(_pk(_hiddenCategoriesKey), categories);
   }
 
   List<String> loadTimerHiddenCategories() {
-    return _prefs.getStringList(_timerHiddenCategoriesKey) ?? [];
+    return _prefs.getStringList(_pk(_timerHiddenCategoriesKey)) ?? [];
   }
 
   Future<void> saveTimerHiddenCategories(List<String> categories) async {
-    await _prefs.setStringList(_timerHiddenCategoriesKey, categories);
+    await _prefs.setStringList(_pk(_timerHiddenCategoriesKey), categories);
   }
 
   Future<void> saveTimerState(Map<String, dynamic> state) async {
-    await _prefs.setString(_timerStateKey, jsonEncode(state));
+    await _prefs.setString(_pk(_timerStateKey), jsonEncode(state));
   }
 
   // --- Layout Mode ---
   int loadLayoutMode() {
-    return _prefs.getInt(_layoutModeKey) ?? 0;
+    return _prefs.getInt(_pk(_layoutModeKey)) ?? 0;
   }
 
   Future<void> saveLayoutMode(int index) async {
-    await _prefs.setInt(_layoutModeKey, index);
+    await _prefs.setInt(_pk(_layoutModeKey), index);
   }
 
   // --- Master Reset ---
   Future<void> clearAllLocalData() async {
-    debugPrint('StorageService: CLEARING ALL LOCAL DATA');
+    debugPrint('StorageService: FORCE CLEARING ALL PERSISTENT DATA');
+    // 強制完整抹除，不論是否已登入，確保絕對隱私
     await _prefs.clear();
   }
 }

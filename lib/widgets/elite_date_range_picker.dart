@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math' as math;
+import '../helpers/responsive_helper.dart';
 
 class EliteDateRangePicker extends StatefulWidget {
   final DateTimeRange? initialDateRange;
@@ -136,7 +137,7 @@ class _EliteDateRangePickerState extends State<EliteDateRangePicker> {
         Text(
           date == null ? '未選擇' : '${date.year} / ${date.month} / ${date.day}',
           style: GoogleFonts.shareTechMono(
-            fontSize: 24,
+            fontSize: ResponsiveHelper.sp(context, 24),
             fontWeight: FontWeight.bold,
             color: date == null ? theme.colorScheme.onSurfaceVariant.withOpacity(0.5) : theme.colorScheme.primary,
           ),
@@ -194,7 +195,10 @@ class _EliteDateRangePickerState extends State<EliteDateRangePicker> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Text(
                 '${_currentMonth.year} 年 ${_currentMonth.month} 月',
-                style: GoogleFonts.outfit(fontSize: 22, fontWeight: FontWeight.bold),
+                style: GoogleFonts.outfit(
+                  fontSize: ResponsiveHelper.sp(context, 22),
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ),
@@ -249,7 +253,7 @@ class _EliteDateRangePickerState extends State<EliteDateRangePicker> {
         child: Text(
           '${date.day}',
           style: GoogleFonts.outfit(
-            fontSize: 20,
+            fontSize: ResponsiveHelper.sp(context, 20),
             fontWeight: isStart || isEnd || isToday ? FontWeight.bold : FontWeight.normal,
             color: textColor,
           ),
@@ -358,7 +362,13 @@ class _EliteDateRangePickerState extends State<EliteDateRangePicker> {
               padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             ),
-            child: const Text('確定', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            child: Text(
+              '確定',
+              style: TextStyle(
+                fontSize: ResponsiveHelper.sp(context, 20),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),

@@ -16,8 +16,9 @@ class Goal {
   final DateTime updatedAt;
   final DateTime startDate; 
   final Map<String, int> completionHistory; 
-
   final int lastMilestone; 
+  final String? reminderTime;
+  final bool isReminderEnabled;
 
   Goal({
     required this.id,
@@ -32,6 +33,8 @@ class Goal {
     required this.startDate,
     this.completionHistory = const {},
     this.lastMilestone = 0,
+    this.reminderTime,
+    this.isReminderEnabled = false,
   }) : updatedAt = updatedAt ?? createdAt;
 
   Goal copyWith({
@@ -47,6 +50,8 @@ class Goal {
     DateTime? startDate,
     Map<String, int>? completionHistory,
     int? lastMilestone,
+    String? reminderTime,
+    bool? isReminderEnabled,
   }) {
     return Goal(
       id: id ?? this.id,
@@ -61,6 +66,8 @@ class Goal {
       startDate: startDate ?? this.startDate,
       completionHistory: completionHistory ?? this.completionHistory,
       lastMilestone: lastMilestone ?? this.lastMilestone,
+      reminderTime: reminderTime ?? this.reminderTime,
+      isReminderEnabled: isReminderEnabled ?? this.isReminderEnabled,
     );
   }
 
@@ -78,6 +85,8 @@ class Goal {
       'startDate': startDate.toIso8601String(),
       'completionHistory': Map<String, int>.from(completionHistory),
       'lastMilestone': lastMilestone,
+      'reminderTime': reminderTime,
+      'isReminderEnabled': isReminderEnabled,
     };
   }
 
@@ -109,11 +118,12 @@ class Goal {
       updatedAt: DateTime.parse(json['updatedAt'] as String? ?? createdAtStr),
       startDate: DateTime.parse(startDateStr),
       completionHistory: (json['completionHistory'] as Map<String, dynamic>?)?.map((k, v) {
-        // 自動正規化日期 Key：將所有 '/' 轉換為 '-' 確保相容性
         final normalizedKey = k.replaceAll('/', '-');
         return MapEntry(normalizedKey, (v as num?)?.toInt() ?? 0);
       }) ?? {},
       lastMilestone: (json['lastMilestone'] as num?)?.toInt() ?? 0,
+      reminderTime: json['reminderTime'] as String?,
+      isReminderEnabled: json['isReminderEnabled'] as bool? ?? false,
     );
   }
 }

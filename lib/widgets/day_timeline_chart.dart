@@ -44,12 +44,12 @@ class DayTimelineChart extends StatelessWidget {
                 child: Stack(
                   clipBehavior: Clip.hardEdge,
                   children: [
-                    // Background track
+                    // Background track (Groove look)
                     Positioned.fill(
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
-                          borderRadius: BorderRadius.circular(8),
+                          color: Colors.black.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(6),
                         ),
                       ),
                     ),
@@ -60,8 +60,8 @@ class DayTimelineChart extends StatelessWidget {
                         left: x,
                         top: 0,
                         bottom: 0,
-                        width: 1,
-                        child: Container(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.6)),
+                        width: 1.5,
+                        child: Container(color: Colors.white.withOpacity(0.1)),
                       );
                     }),
                     // Session blocks
@@ -70,27 +70,35 @@ class DayTimelineChart extends StatelessWidget {
                       
                       final startSecs = s.date.hour * 3600.0 + s.date.minute * 60.0;
                       
-                      // Safety-first calculations: ensure left and width are stable
-                      final rawLeft = (startSecs / secondsInDay) * totalWidth;
-                      final left = math.max(0.0, math.min(totalWidth - 4.0, rawLeft));
-                      
-                      final idealWidth = (s.durationSeconds / secondsInDay) * totalWidth;
-                      final maxWidth = math.max(4.0, totalWidth - left);
-                      final width = math.max(4.0, math.min(maxWidth, idealWidth));
+                      final left = (startSecs / secondsInDay) * totalWidth;
+                      final width = (s.durationSeconds / secondsInDay) * totalWidth;
 
                       final color = catColors[s.category] ?? Colors.blue;
+                      
+                      // Ensure a minimum visual width and a small gap
+                      final visualWidth = math.max(3.0, width - 1.0);
+                      
+                      final endTime = s.date.add(Duration(seconds: s.durationSeconds));
+                      final startStr = '${s.date.hour.toString().padLeft(2, '0')}:${s.date.minute.toString().padLeft(2, '0')}';
+                      final endStr = '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}';
+
                       return Positioned(
-                        left: left,
-                        top: 4,
-                        bottom: 4,
-                        width: width,
+                        left: left + 0.5,
+                        top: 2,
+                        bottom: 2,
+                        width: visualWidth,
                         child: Tooltip(
-                          message: '${s.category}\n${s.date.hour.toString().padLeft(2,'0')}:${s.date.minute.toString().padLeft(2,'0')} · ${(s.durationSeconds~/60)}m',
+                          triggerMode: TooltipTriggerMode.tap,
+                          preferBelow: false,
+                          message: '${s.category}\n$startStr - $endStr · ${(s.durationSeconds~/60)}m',
                           child: Container(
                             decoration: BoxDecoration(
                               color: color,
                               borderRadius: BorderRadius.circular(4),
-                              boxShadow: [BoxShadow(color: color.withOpacity(0.4), blurRadius: 4, offset: const Offset(0, 1))],
+                              border: Border.all(color: Colors.black.withOpacity(0.15), width: 0.5),
+                              boxShadow: [
+                                BoxShadow(color: color.withOpacity(0.4), blurRadius: 3, offset: const Offset(0, 1)),
+                              ],
                             ),
                           ),
                         ),

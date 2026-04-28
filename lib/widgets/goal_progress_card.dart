@@ -8,7 +8,9 @@ import '../providers/goal_provider.dart';
 import '../providers/task_goal_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/session_provider.dart';
+import '../providers/timer_provider.dart';
 import 'goal_calendar_view.dart';
+import '../helpers/responsive_helper.dart';
 
 class GoalProgressCard extends ConsumerStatefulWidget {
   final Goal goal;
@@ -30,6 +32,13 @@ class _GoalProgressCardState extends ConsumerState<GoalProgressCard> {
     return '${mins}m';
   }
 
+  String _formatTodayTime(int seconds) {
+    final hrs = seconds ~/ 3600;
+    final mins = (seconds % 3600) ~/ 60;
+    if (hrs > 0) return '${hrs}小時${mins}分';
+    return '${mins}分';
+  }
+
   String _formatDate(DateTime d) => '${d.year}/${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}';
 
   @override
@@ -44,6 +53,27 @@ class _GoalProgressCardState extends ConsumerState<GoalProgressCard> {
     final remainingText = isTaskMode 
         ? ref.watch(taskGoalProvider.notifier).getRemainingText(goal)
         : ref.watch(goalProvider.notifier).getRemainingText(goal);
+
+    // 計算今日該類別已儲存的秒數
+    final today = DateTime.now();
+    final int savedTodaySeconds = ref.watch(sessionsProvider)
+        .where((s) => s.category == goal.category && 
+               s.date.toLocal().year == today.year && 
+               s.date.toLocal().month == today.month && 
+               s.date.toLocal().day == today.day)
+        .fold<int>(0, (sum, s) => sum + s.durationSeconds);
+
+    // 取得當前計時器狀態 (即時累加)
+    final timerState = ref.watch(timerProvider);
+    final int currentTimingSeconds = (timerState.isRunning && timerState.category == goal.category)
+        ? timerState.currentElapsed
+        : 0;
+
+    final int totalTodaySeconds = savedTodaySeconds + currentTimingSeconds;
+    
+    // 如果是任務型，今天達成量直接取 completionHistory
+    final todayKey = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+    final totalTodayTasks = goal.completionHistory[todayKey] ?? 0;
 
     final catColor = ref.watch(categoryColorProvider)[goal.category] ?? Colors.blue;
     final isAchieved = progress >= 1.0;
@@ -70,7 +100,11 @@ class _GoalProgressCardState extends ConsumerState<GoalProgressCard> {
                   children: [
                     Text(
                       goal.title,
-                      style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 24, letterSpacing: -0.5),
+                      style: GoogleFonts.outfit(
+                        fontWeight: FontWeight.bold,
+                        fontSize: ResponsiveHelper.sp(context, 24),
+                        letterSpacing: -0.5,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                     if (goal.title != goal.category)
@@ -98,7 +132,11 @@ class _GoalProgressCardState extends ConsumerState<GoalProgressCard> {
                 decoration: BoxDecoration(color: catColor.withOpacity(0.12), borderRadius: BorderRadius.circular(22)),
                 child: Text(
                   goal.period == GoalPeriod.daily ? '每日' : goal.period == GoalPeriod.weekly ? '每週' : '每月',
-                  style: TextStyle(fontSize: 18, color: catColor, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontSize: ResponsiveHelper.sp(context, 18),
+                    color: catColor,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
@@ -107,13 +145,43 @@ class _GoalProgressCardState extends ConsumerState<GoalProgressCard> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                goal.type == GoalType.time 
-                  ? '本期目標: ${_formatTime(goal.targetSeconds)}' 
-                  : (goal.type == GoalType.binary ? '是否達成？' : '目標完成數: ${goal.targetSeconds}'),
-                style: TextStyle(color: Colors.grey.shade700, fontSize: 17, fontWeight: FontWeight.bold),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    goal.type == GoalType.time 
+                      ? '本期目標: ${_formatTime(goal.targetSeconds)}' 
+                      : (goal.type == GoalType.binary ? '是否達成？' : '目標完成數: ${goal.targetSeconds}'),
+                    style: TextStyle(
+                      color: Colors.grey.shade700,
+                      fontSize: ResponsiveHelper.sp(context, 17),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '今天達成量: ${goal.type == GoalType.time ? _formatTodayTime(totalTodaySeconds) : totalTodayTasks}',
+                    style: TextStyle(
+                      color: catColor.withOpacity(0.8),
+                      fontSize: ResponsiveHelper.sp(context, 14),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
-              Text('${(progress * 100).toInt()}%', style: GoogleFonts.shareTechMono(fontWeight: FontWeight.bold, fontSize: 34, color: isAchieved ? Colors.green : catColor)),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    '${(progress * 100).toInt()}%',
+                    style: GoogleFonts.shareTechMono(
+                      fontWeight: FontWeight.bold,
+                      fontSize: ResponsiveHelper.sp(context, 34),
+                      color: isAchieved ? Colors.green : catColor,
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -162,7 +230,16 @@ class _GoalProgressCardState extends ConsumerState<GoalProgressCard> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(child: Text(remainingText, style: TextStyle(fontSize: 17, color: isAchieved ? Colors.green : Colors.grey.shade600, fontWeight: FontWeight.bold))),
+              Expanded(
+                child: Text(
+                  remainingText,
+                  style: TextStyle(
+                    fontSize: ResponsiveHelper.sp(context, 17),
+                    color: isAchieved ? Colors.green : Colors.grey.shade600,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
               Row(
                 children: [
                   // 時間型：手動更新歷史按鈕

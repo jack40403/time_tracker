@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:vibration/vibration.dart';
 import '../providers/timer_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/session_provider.dart';
 import '../providers/firestore_provider.dart';
 import '../providers/layout_provider.dart';
 import '../widgets/category_dialogs.dart';
+import '../helpers/responsive_helper.dart';
 
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
@@ -120,7 +122,7 @@ class HomePage extends ConsumerWidget {
               Text(
                 'Me Time',
                 style: GoogleFonts.outfit(
-                  fontSize: 22,
+                  fontSize: ResponsiveHelper.sp(context, 22),
                   fontWeight: FontWeight.w300,
                   letterSpacing: 1.5,
                   color: Theme.of(context).colorScheme.primary.withOpacity(0.35),
@@ -136,24 +138,7 @@ class HomePage extends ConsumerWidget {
               ),
             ],
           ),
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    if (ref.watch(firestoreServiceProvider) != null) const Icon(Icons.cloud_done, color: Colors.green, size: 14),
-                    const SizedBox(width: 6),
-                    Text('UID: ${timerNotifier.debugId}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary.withOpacity(0.6))),
-                  ],
-                ),
-              ),
-            ],
-          ),
+          const SizedBox.shrink(),
         ],
       ),
     );
@@ -174,7 +159,7 @@ class HomePage extends ConsumerWidget {
               Text(
                 '項目列表 (可拖曳排序)',
                 style: GoogleFonts.outfit(
-                  fontSize: 14,
+                  fontSize: ResponsiveHelper.sp(context, 14),
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1,
                   color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
@@ -313,57 +298,72 @@ class HomePage extends ConsumerWidget {
     
     int realTimeDailyTotal = dailyBaseTotal + timerState.currentElapsed;
 
-    final digitalStyle = GoogleFonts.shareTechMono(
-      fontSize: 110 * scale,
+    final displayScale = scale * ResponsiveHelper.getTimerScale(context);
+
+    final digitalStyle = GoogleFonts.fredoka(
+      fontSize: 100 * displayScale,
       fontWeight: FontWeight.bold,
       color: timerColor,
-      shadows: [if (timerState.isRunning) Shadow(color: timerColor.withOpacity(0.5), blurRadius: 25)],
+      shadows: [
+        Shadow(color: Colors.black.withOpacity(0.1), offset: const Offset(4, 4), blurRadius: 2),
+        if (timerState.isRunning) Shadow(color: timerColor.withOpacity(0.4), blurRadius: 30),
+      ],
     );
 
     return Container(
       margin: const EdgeInsets.all(24),
       padding: EdgeInsets.all(40 * scale),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withOpacity(0.85),
-        borderRadius: BorderRadius.circular(40),
-        border: Border.all(color: Colors.white.withOpacity(0.2)),
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(50),
+        border: Border.all(color: Colors.black, width: 4),
         boxShadow: [
-          BoxShadow(color: timerColor.withOpacity(0.1), blurRadius: 30, offset: const Offset(0, 10)),
+          BoxShadow(color: Colors.black.withOpacity(0.1), offset: const Offset(8, 8)),
+          BoxShadow(color: timerColor.withOpacity(0.2), blurRadius: 30, offset: const Offset(0, 10)),
         ],
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
         children: [
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              'SESSION TIME',
-              style: TextStyle(
-                fontSize: 18 * scale,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 2,
-                color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'GO GO GO!',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.fredoka(
+                  fontSize: ResponsiveHelper.sp(context, 20) * scale,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1,
+                  color: Theme.of(context).colorScheme.primary.withOpacity(0.4),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          FittedBox(fit: BoxFit.scaleDown, child: Text(_formatTime(timerState.currentElapsed), style: digitalStyle)),
-          SizedBox(height: 24 * scale),
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withOpacity(0.05), borderRadius: BorderRadius.circular(16)),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.today, size: 18, color: Colors.grey),
-                  const SizedBox(width: 10),
-                  Text('今日累計: ', style: TextStyle(fontSize: 15 * scale, color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.6))),
-                  Text(_formatTime(realTimeDailyTotal), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16 * scale)),
-                ],
+              const SizedBox(height: 8),
+              FittedBox(fit: BoxFit.scaleDown, child: Text(_formatTime(timerState.currentElapsed), style: digitalStyle)),
+              SizedBox(height: 24 * scale),
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.black.withOpacity(0.1), width: 2),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.timer_rounded, size: 20, color: Colors.black54),
+                      const SizedBox(width: 10),
+                      Text('今天已累積', style: TextStyle(fontSize: ResponsiveHelper.sp(context, 15) * scale, fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 4),
+                      Text(_formatTime(realTimeDailyTotal), style: GoogleFonts.shareTechMono(fontWeight: FontWeight.bold, fontSize: ResponsiveHelper.sp(context, 18) * scale)),
+                    ],
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ],
       ),
@@ -414,24 +414,35 @@ class HomePage extends ConsumerWidget {
 
           const SizedBox(width: 40),
 
-          GestureDetector(
-            onTap: timerNotifier.toggleTimer,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              width: 90, height: 90,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: timerState.isRunning ? Colors.transparent : timerColor,
-                border: timerState.isRunning ? Border.all(color: timerColor, width: 4) : null,
-                boxShadow: [
-                  if (!timerState.isRunning) 
-                    BoxShadow(color: timerColor.withOpacity(0.4), blurRadius: 20, offset: const Offset(0, 10))
-                ],
-              ),
-              child: Icon(
-                timerState.isRunning ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                size: 52,
-                color: timerState.isRunning ? timerColor : Colors.white,
+          TweenAnimationBuilder(
+            duration: const Duration(milliseconds: 600),
+            tween: Tween<double>(begin: 1.0, end: timerState.isRunning ? 1.05 : 1.0),
+            curve: Curves.elasticOut,
+            builder: (context, scaleValue, child) => Transform.scale(
+              scale: scaleValue,
+              child: GestureDetector(
+                onTap: () {
+                   timerNotifier.toggleTimer();
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  width: 100, height: 100,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: timerState.isRunning ? Colors.white : timerColor,
+                    border: Border.all(color: Colors.black, width: 4),
+                    boxShadow: [
+                      const BoxShadow(color: Colors.black, offset: Offset(4, 4)),
+                      if (!timerState.isRunning) 
+                        BoxShadow(color: timerColor.withOpacity(0.4), blurRadius: 20, offset: const Offset(0, 10))
+                    ],
+                  ),
+                  child: Icon(
+                    timerState.isRunning ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    size: 60,
+                    color: timerState.isRunning ? Colors.black : Colors.white,
+                  ),
+                ),
               ),
             ),
           ),
@@ -439,13 +450,14 @@ class HomePage extends ConsumerWidget {
           const SizedBox(width: 40),
 
           if (timerState.currentElapsed > 0)
-            IconButton.filledTonal(
+            IconButton.filled(
               onPressed: () => _showStopAndSaveDialog(context, ref),
-              icon: const Icon(Icons.stop_rounded, size: 28),
+              icon: const Icon(Icons.stop_rounded, size: 30),
               style: IconButton.styleFrom(
-                backgroundColor: Colors.red.withOpacity(0.12),
-                foregroundColor: Colors.red,
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
                 padding: const EdgeInsets.all(16),
+                side: const BorderSide(color: Colors.black, width: 3),
               ),
               tooltip: '結束並儲存',
             )

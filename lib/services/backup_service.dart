@@ -74,16 +74,14 @@ class BackupService {
 
       // 3. Restore Goals
       if (payload.containsKey('goals')) {
-        final goals = (payload['goals'] as List).map((e) => Goal.fromJson(e)).toList();
-        ref.read(goalProvider.notifier).state = goals;
-        await ref.read(goalProvider.notifier).saveAll(goals);
+        final goals = (payload['goals'] as List).map<Goal>((e) => Goal.fromJson(e)).toList();
+        await ref.read(goalProvider.notifier).restoreFromBackup(goals);
       }
 
       // 4. Restore Task Goals
       if (payload.containsKey('task_goals')) {
-        final taskGoals = (payload['task_goals'] as List).map((e) => Goal.fromJson(e)).toList();
-        ref.read(taskGoalProvider.notifier).state = taskGoals;
-        await ref.read(taskGoalProvider.notifier).saveAll(taskGoals);
+        final taskGoals = (payload['task_goals'] as List).map<Goal>((e) => Goal.fromJson(e)).toList();
+        await ref.read(taskGoalProvider.notifier).restoreFromBackup(taskGoals);
       }
 
       // 5. Restore Goal Order
@@ -151,6 +149,38 @@ class BackupService {
     }
 
     // Join with CRLF for maximum CSV compatibility
+    return lines.join('\r\n');
+  }
+
+  /// Generates a CSV string of all goals and their completion history.
+  String createGoalsCsv() {
+    final goals = ref.read(goalProvider);
+    final taskGoals = ref.read(taskGoalProvider);
+    final all = [...goals, ...taskGoals];
+
+    final lines = ['Title,Category,Type,Period,Target,Date,Value,Status'];
+    
+    for (var g in all) {
+      final target = g.targetSeconds;
+      final typeStr = g.type.name;
+      final periodStr = g.period.name;
+      
+      // If no history, add a placeholder row
+      if (g.completionHistory.isEmpty) {
+        lines.add('"${g.title}",${g.category},$typeStr,$periodStr,$target,N/A,0,No History');
+        continue;
+      }
+
+      // Sort dates
+      final dates = g.completionHistory.keys.map((e) => e.toString()).toList()..sort((a, b) => b.compareTo(a));
+      
+      for (var date in dates) {
+        final val = g.completionHistory[date] ?? 0;
+        final isAchieved = val >= target ? 'Achieved' : 'Ongoing';
+        lines.add('"${g.title}",${g.category},$typeStr,$periodStr,$target,$date,$val,$isAchieved');
+      }
+    }
+
     return lines.join('\r\n');
   }
 }

@@ -6,6 +6,7 @@ import 'firestore_provider.dart';
 import 'session_provider.dart';
 import 'goal_provider.dart';
 import 'task_goal_provider.dart';
+import '../models/time_session.dart';
 
 const defaultCategoryColors = {
   '閱讀 📚': Color(0xFF6C63FF),
@@ -18,7 +19,7 @@ class CategoryColorNotifier extends Notifier<Map<String, Color>> {
 
   @override
   Map<String, Color> build() {
-    final storage = ref.read(storageServiceProvider);
+    final storage = ref.watch(storageServiceProvider);
     final local = storage.loadCategoryColors(defaultCategoryColors);
     _lastLocalUpdateTime = storage.loadLastUpdated();
 
@@ -67,8 +68,14 @@ class CategoryColorNotifier extends Notifier<Map<String, Color>> {
   }
 
   void addCategory(String category, Color color) {
-    ref.read(hiddenCategoriesProvider.notifier).unhideCategory(category);
-    if (!state.containsKey(category)) {
+    // Fuzzy Deduplication: Check if a rich version already exists
+    final baseName = TimeSession.toBaseName(category);
+    final existingRichName = state.keys.firstWhere(
+      (k) => TimeSession.toBaseName(k) == baseName,
+      orElse: () => '',
+    );
+
+    if (existingRichName.isEmpty) {
       state = {...state, category: color};
       _save();
     }
@@ -190,7 +197,11 @@ class CategoryColorNotifier extends Notifier<Map<String, Color>> {
     int colorIdx = state.length;
 
     for (var name in names) {
-      if (!newState.containsKey(name) && !hidden.contains(name)) {
+      final baseName = TimeSession.toBaseName(name);
+      final exists = newState.keys.any((k) => TimeSession.toBaseName(k) == baseName) ||
+                     hidden.any((h) => TimeSession.toBaseName(h) == baseName);
+
+      if (!exists) {
         newState[name] = autoColors[colorIdx % autoColors.length];
         colorIdx++;
         changed = true;
@@ -259,7 +270,7 @@ class CategoryColorNotifier extends Notifier<Map<String, Color>> {
 class HiddenCategoriesNotifier extends Notifier<Set<String>> {
   @override
   Set<String> build() {
-    final storage = ref.read(storageServiceProvider);
+    final storage = ref.watch(storageServiceProvider);
     final initial = storage.loadHiddenCategories().toSet();
     
     // Sync from cloud
@@ -315,7 +326,7 @@ class HiddenCategoriesNotifier extends Notifier<Set<String>> {
 class TimerHiddenCategoriesNotifier extends Notifier<Set<String>> {
   @override
   Set<String> build() {
-    final storage = ref.read(storageServiceProvider);
+    final storage = ref.watch(storageServiceProvider);
     final initial = storage.loadTimerHiddenCategories().toSet();
     
     // Sync from cloud settings if exists
@@ -367,7 +378,7 @@ class TimerHiddenCategoriesNotifier extends Notifier<Set<String>> {
 class GoalsHiddenCategoriesNotifier extends Notifier<Set<String>> {
   @override
   Set<String> build() {
-    final storage = ref.read(storageServiceProvider);
+    final storage = ref.watch(storageServiceProvider);
     // Use a new storage key for goal-specific hiding
     final initial = (storage.prefs.getStringList('goals_hidden_categories') ?? []).toSet();
     

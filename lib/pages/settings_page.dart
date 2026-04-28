@@ -1,18 +1,19 @@
 import 'dart:convert';
-import 'dart:io' if (dart.library.html) 'dart:html'; 
-import 'dart:html' as html if (dart.library.io) 'dart:io';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:vibration/vibration.dart';
 import '../services/update_service.dart';
 import '../providers/theme_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/goal_provider.dart';
-import '../providers/task_goal_provider.dart'; // 新增
-import '../providers/goal_order_provider.dart'; // 新增
+import '../providers/task_goal_provider.dart';
+import '../providers/goal_order_provider.dart';
+import '../models/goal.dart';
 import '../providers/session_provider.dart';
 import '../providers/background_provider.dart';
 import '../providers/firestore_provider.dart';
@@ -23,8 +24,9 @@ import '../services/import_service.dart';
 import '../widgets/color_picker_dialog.dart';
 import '../widgets/category_dialogs.dart';
 import '../helpers/debug_helper.dart';
-import '../services/backup_service.dart'; // 新增
-import 'package:file_picker/file_picker.dart'; // 新增
+import '../services/backup_service.dart';
+import 'package:file_picker/file_picker.dart' show FilePicker, FileType; // 顯式導入關鍵類型
+import '../helpers/platform_helper.dart'; // 引入自定義平台輔助
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -106,55 +108,94 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 
   void _showImportJiffyDialog(BuildContext context) {
-    final textController = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('導入 Jiffy JSON 數據'),
+        title: Row(
+          children: [
+            const Icon(Icons.auto_awesome_rounded, color: Colors.indigo),
+            const SizedBox(width: 8),
+            const Text('全能數據恢復工具'),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('請貼上從 Jiffy 導出的 JSON 內容：', style: TextStyle(fontSize: 13, color: Colors.grey)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: textController,
-              maxLines: 8,
-              decoration: InputDecoration(
-                hintText: '{ "time_entries": [...], "time_owners": [...] }',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                filled: true,
-                fillColor: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
-              ),
-              style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
-            ),
+            const Text('您可以選擇 Elite 通用備份檔案，或是 Jiffy 導出的 JSON 檔案。系統將自動識別並還原數據。', style: TextStyle(fontSize: 13, color: Colors.grey)),
+            const SizedBox(height: 16),
+            const Text('💡 建議：匯入大型檔案可能需要幾秒鐘，請耐心等待。', style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
           ],
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          ElevatedButton(
+          ElevatedButton.icon(
             onPressed: () async {
-              final jsonStr = textController.text.trim();
-              if (jsonStr.isEmpty) return;
-              
               Navigator.pop(ctx);
-              
-              final sessions = JiffyImportService.parseJiffyJson(jsonStr);
-              if (sessions.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('❌ 解析失敗：請確認 JSON 格式正確'), behavior: SnackBarBehavior.floating));
-                return;
-              }
-              
-              final count = await ref.read(sessionsProvider.notifier).importSessions(sessions);
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ 成功導入 $count 筆新紀錄！'), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating));
-              }
+              _handleUniversalImport(context);
             },
-            child: const Text('執行導入'),
+            icon: const Icon(Icons.file_open_rounded),
+            label: const Text('從檔案中選取'),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _handleUniversalImport(BuildContext context) async {
+    try {
+      final jsonString = await pickJsonFile();
+      if (jsonString == null) return;
+
+      // Show loading snackbar
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('⏳ 正在解析數據檔案...'), duration: Duration(seconds: 2))
+        );
+      }
+
+      final decoded = jsonDecode(jsonString);
+
+      bool isEliteBackup = decoded is Map<String, dynamic> && 
+                         decoded.containsKey('payload') && 
+                         decoded['version'] != null;
+      
+      bool isJiffyBackup = decoded is Map<String, dynamic> && 
+                          decoded.containsKey('time_entries');
+
+      if (isEliteBackup) {
+        final success = await BackupService(ref).restoreFromBackup(jsonString);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(success ? '✅ 全備份恢復成功！' : '❌ 備份恢復失敗'),
+              backgroundColor: success ? Colors.green : Colors.red,
+            )
+          );
+        }
+      } else if (isJiffyBackup) {
+        final sessions = JiffyImportService.parseJiffyJson(jsonString);
+        if (sessions.isEmpty) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('❌ Jiffy 資料解析結果為空')));
+          return;
+        }
+        final count = await ref.read(sessionsProvider.notifier).importSessions(sessions);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ 成功從 Jiffy 救回 $count 筆紀錄！'),
+              backgroundColor: Colors.green,
+            )
+          );
+        }
+      } else {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('❌ 無法識別的 JSON 檔案格式'), backgroundColor: Colors.red));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 導入出錯: $e'), backgroundColor: Colors.red));
+      }
+    }
   }
 
   void _showClearAllConfirmationDialog(BuildContext context) {
@@ -223,7 +264,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     showAddCategoryDialog(context, ref);
   }
 
-  void _showArchivedCategoriesDialog(BuildContext context) {
+  void _showArchivedFolderDialog(BuildContext context) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -239,14 +280,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16), decoration: BoxDecoration(color: Colors.grey.withOpacity(0.3), borderRadius: BorderRadius.circular(2))),
-                Text('封存清單管理', style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold)),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.folder_zip_outlined, color: Colors.blueGrey),
+                    const SizedBox(width: 8),
+                    Text('封存項目資料夾', style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold)),
+                  ],
+                ),
                 const SizedBox(height: 8),
-                const Text('封存項目將從所有頁面隱藏。您可以隨時在此處還原。', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                const Text('這些項目已從全域隱藏。您可以在此將其還原回主清單。', style: TextStyle(fontSize: 12, color: Colors.grey)),
                 const SizedBox(height: 20),
                 if (hidden.isEmpty)
                    const Padding(
                      padding: EdgeInsets.symmetric(vertical: 40),
-                     child: Text('目前沒有任何封存中的項目', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                     child: Text('目前資料夾中沒有任何封存項目', style: TextStyle(color: Colors.grey, fontSize: 13)),
                    )
                 else
                   Flexible(
@@ -295,6 +343,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
   }
 
+
   @override
   Widget build(BuildContext context) {
     final themeMode = ref.watch(themeModeProvider);
@@ -302,6 +351,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final catColors = ref.watch(categoryColorProvider);
     final hiddenCategories = ref.watch(hiddenCategoriesProvider);
     final timerColor = ref.watch(timerColorProvider);
+    final visibleEntries = catColors.entries.where((e) => !hiddenCategories.contains(e.key)).toList();
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -377,7 +427,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               title: Text(authUser.displayName ?? '已登入用戶', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
               subtitle: Text(authUser.email ?? '', style: const TextStyle(fontSize: 15)),
               trailing: TextButton(
-                onPressed: () => ref.read(authServiceProvider).signOut(),
+                onPressed: () => _handleLogout(context, ref),
                 child: const Text('登出', style: TextStyle(color: Colors.red)),
               ),
             ),
@@ -426,35 +476,104 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     ),
                     const SizedBox(height: 16),
                     SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('🔄 正在從雲端強制讀取數據...'), duration: Duration(seconds: 2))
-                          );
-                          try {
-                            await ref.read(sessionsProvider.notifier).forceSyncFromCloud();
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                content: Text('✅ 同步完成！共 ${ref.read(sessionsProvider).length} 筆記錄'), 
-                                backgroundColor: Colors.green, 
-                                behavior: SnackBarBehavior.floating,
-                                duration: const Duration(seconds: 3),
-                              ));
-                            }
-                          } catch (e) {
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                content: Text('❌ 同步失敗: $e'), 
-                                backgroundColor: Colors.red, 
-                                behavior: SnackBarBehavior.floating,
-                                duration: const Duration(milliseconds: 1500),
-                              ));
-                            }
-                          }
-                        },
-                        icon: const Icon(Icons.sync, size: 18),
-                        label: const Text('手動強制同步'),
+                      child: Column(
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () async {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('🔄 正在同步雲端數據 (包含目標與歷史)...'), duration: Duration(seconds: 2))
+                              );
+                              try {
+                                final firestore = ref.read(firestoreServiceProvider);
+                                if (firestore == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('❌ 請先登入雲端帳戶')));
+                                  return;
+                                }
+                                
+                                // 1. 強制讀取計時紀錄
+                                await ref.read(sessionsProvider.notifier).forceSyncFromCloud();
+                                
+                                // 2. 強制讀取時間型目標
+                                final timeGoalsData = await firestore.fetchGoalsOnce();
+                                if (timeGoalsData.isNotEmpty) {
+                                  final remote = timeGoalsData.map((e) => Goal.fromJson(e as Map<String, dynamic>)).toList();
+                                  ref.read(goalProvider.notifier).forceMergeFromCloud(remote);
+                                }
+                                
+                                // 3. 強制讀取任務型目標
+                                final taskGoalsData = await firestore.fetchTaskGoalsOnce();
+                                if (taskGoalsData.isNotEmpty) {
+                                  final remote = taskGoalsData.map((e) => Goal.fromJson(e as Map<String, dynamic>)).toList();
+                                  ref.read(taskGoalProvider.notifier).forceMergeFromCloud(remote);
+                                }
+
+                                if (mounted) {
+                                  final totalSessions = ref.read(sessionsProvider).length;
+                                  final totalGoals = ref.read(goalProvider).length + ref.read(taskGoalProvider).length;
+                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                    content: Text('✅ 同步完成！共 $totalSessions 筆紀錄與 $totalGoals 個目標'), 
+                                    backgroundColor: Colors.green, 
+                                    behavior: SnackBarBehavior.floating,
+                                    duration: const Duration(seconds: 3),
+                                  ));
+                                }
+                              } catch (e) {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                    content: Text('❌ 同步失敗: $e'), 
+                                    backgroundColor: Colors.red, 
+                                    behavior: SnackBarBehavior.floating,
+                                    duration: const Duration(milliseconds: 1500),
+                                  ));
+                                }
+                              }
+                            },
+                            icon: const Icon(Icons.sync, size: 18),
+                            label: const Text('手動強制同步'),
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text('原子級雲端修復'),
+                                    content: const Text('此操作將執行深層去重清理：\n1. 從雲端下載所有紀錄\n2. 自動移除重複與格式錯誤的數據\n3. 重置雲端並重新上傳乾淨的副本\n\n適用於解決「數據翻倍」或「同步錯亂」問題。'),
+                                    actions: [
+                                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+                                      ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white), child: const Text('開始修復')),
+                                    ],
+                                  ),
+                                );
+
+                                if (confirm == true) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('🚀 啟動原子級修復程式... 請勿關閉 App'), duration: Duration(seconds: 5))
+                                  );
+                                  final duplicateCount = await ref.read(sessionsProvider.notifier).forceCloudCleanup();
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('✨ 修復完成！已自動清理 $duplicateCount 筆重複或無效紀錄。'),
+                                        backgroundColor: Colors.green,
+                                        duration: const Duration(seconds: 4),
+                                      )
+                                    );
+                                  }
+                                }
+                              },
+                              icon: const Icon(Icons.auto_fix_high_rounded, size: 18),
+                              label: const Text('原子級去重修復 (解決翻倍問題)'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue.withOpacity(0.8),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -486,7 +605,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 children: [
                    Consumer(
                     builder: (context, ref, _) {
-                      final updateInfo = ref.watch(updateProvider);
+                      final updateState = ref.watch(updateProvider);
+                      final isChecking = updateState.isChecking;
+                      final hasUpdate = updateState.isUpdateAvailable;
+                      
                       return FutureBuilder<PackageInfo>(
                         future: PackageInfo.fromPlatform(),
                         builder: (context, snapshot) {
@@ -496,28 +618,50 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           return Column(
                             children: [
                               ListTile(
-                                leading: const Icon(Icons.info_outline, color: Colors.indigo),
-                                title: const Text('目前版本', style: TextStyle(fontWeight: FontWeight.bold)),
-                                subtitle: Text('v$version (Build $buildNumber)'),
+                                leading: isChecking 
+                                    ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                                    : Icon(hasUpdate ? Icons.system_update_rounded : Icons.info_outline, color: hasUpdate ? Colors.orange : Colors.indigo),
+                                title: Row(
+                                  children: [
+                                    Text(hasUpdate ? '發現新版本' : '目前版本', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    const SizedBox(width: 8),
+                                    if (!hasUpdate) Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(color: Colors.indigo.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                                      child: const Text('正式版', style: TextStyle(fontSize: 10, color: Colors.indigo, fontWeight: FontWeight.bold)),
+                                    ),
+                                  ],
+                                ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      hasUpdate ? 'v${updateState.info!.version} (Build ${updateState.info!.buildNumber})' : 'v$version (Build $buildNumber)',
+                                      style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: hasUpdate ? Colors.orange : Colors.indigo.shade700),
+                                    ),
+                                    Text(
+                                      isChecking ? '正在檢查雲端版本...' : (hasUpdate ? '發現一項重要更新' : '已是最新版本'), 
+                                      style: TextStyle(fontSize: 12, color: hasUpdate ? Colors.orange : Colors.grey)
+                                    ),
+                                  ],
+                                ),
                                 trailing: OutlinedButton(
-                                  onPressed: () async {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('🔍 正在檢查更新...'), duration: Duration(seconds: 1))
-                                    );
-                                    await ref.read(updateProvider.notifier).checkUpdates();
+                                  onPressed: isChecking ? null : () async {
+                                    Vibration.vibrate(duration: 50);
+                                    await ref.read(updateProvider.notifier).checkUpdates(force: true);
                                     final status = ref.read(updateProvider);
                                     if (mounted) {
-                                      if (status == null || !status.isUpdateAvailable) {
+                                      if (!status.isUpdateAvailable && status.error == null) {
                                         ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('✅ 目前已是最新版本'), backgroundColor: Colors.green)
+                                          const SnackBar(content: Text('✅ 目前已是最新版本'), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating)
                                         );
                                       }
                                     }
                                   },
-                                  child: const Text('檢查更新'),
+                                  child: Text(isChecking ? '檢查中' : '檢查更新'),
                                 ),
                               ),
-                              if (updateInfo != null && updateInfo.isUpdateAvailable)
+                              if (hasUpdate)
                                 Container(
                                   margin: const EdgeInsets.all(12),
                                   padding: const EdgeInsets.all(12),
@@ -530,12 +674,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                                     children: [
                                       Row(
                                         children: [
-                                          const Icon(Icons.stars, color: Colors.orange, size: 20),
+                                          const Icon(Icons.auto_awesome, color: Colors.orange, size: 20),
                                           const SizedBox(width: 8),
                                           Expanded(
                                             child: Text(
-                                              updateInfo.isPatch ? '發現新的熱更新補丁' : '發現新版本: ${updateInfo.newVersion}',
-                                              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange),
+                                              updateState.info!.changelog,
+                                              style: const TextStyle(fontSize: 13, color: Colors.orange),
                                             ),
                                           ),
                                         ],
@@ -545,27 +689,25 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                                         width: double.infinity,
                                         child: ElevatedButton.icon(
                                           onPressed: () async {
+                                            Vibration.vibrate(duration: 100);
                                             if (kIsWeb) {
                                               await ref.read(updateProvider.notifier).performUpdate();
-                                              html.window.location.reload(); 
-                                            } else if (updateInfo.isPatch) {
-                                              if (updateInfo.isReadyToRestart) {
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  const SnackBar(content: Text('請手動重啟應用程式以套用更新'), backgroundColor: Colors.blue)
-                                                );
-                                              } else {
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  const SnackBar(content: Text('📥 正在下載補丁...'), duration: Duration(seconds: 2))
-                                                );
-                                                await ref.read(updateProvider.notifier).performUpdate();
-                                              }
+                                              reloadApp();
+                                            } else {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(content: Text('📥 正在啟動一鍵下載...'), duration: Duration(seconds: 2))
+                                              );
+                                              await ref.read(updateProvider.notifier).performUpdate();
                                             }
                                           },
-                                          icon: Icon(updateInfo.isReadyToRestart ? Icons.refresh : Icons.download),
-                                          label: Text(
-                                            kIsWeb ? '立即重新整理' : (updateInfo.isReadyToRestart ? '已就緒 (請重啟)' : '立即下載安裝')
+                                          icon: const Icon(Icons.download_for_offline_rounded),
+                                          label: Text(kIsWeb ? '立即重新整理' : '一鍵下載並安裝最新版'),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.orange, 
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(vertical: 12),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                           ),
-                                          style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
                                         ),
                                       ),
                                     ],
@@ -577,18 +719,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       );
                     },
                   ),
-                  if (kIsWeb)
-                    const ListTile(
-                      leading: Icon(Icons.browser_updated, color: Colors.indigo),
-                      title: Text('熱更新機制', style: TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text('偵測伺服器版本變動自動刷新', style: TextStyle(fontSize: 12)),
-                    )
-                  else
-                    const ListTile(
-                      leading: Icon(Icons.bolt, color: Colors.amber),
-                      title: Text('Shorebird Hot-Push', style: TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text('已啟用背景 Patch 同步', style: TextStyle(fontSize: 12)),
-                    ),
                 ],
               ),
             ),
@@ -631,44 +761,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   ),
                   const Divider(indent: 70, height: 1),
                   ListTile(
-                    leading: const Icon(Icons.restore_outlined, color: Colors.orange),
-                    title: const Text('匯入外部備份 (JSON)', style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: const Text('將會覆蓋目前的本地與雲端數據', style: TextStyle(fontSize: 12, color: Colors.redAccent)),
-                    onTap: () async {
-                       final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['json']);
-                       if (result != null) {
-                          final confirm = await showDialog<bool>(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: const Text('⚠️ 確定要還原嗎？'),
-                              content: const Text('還原將會清除您目前的所有紀錄。建議在操作前先進行一次備份。'),
-                              actions: [
-                                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-                                ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('確認還原')),
-                              ],
-                            ),
-                          );
-
-                          if (confirm == true) {
-                             final file = result.files.first;
-                             String content;
-                             if (kIsWeb) {
-                               content = utf8.decode(file.bytes!);
-                             } else {
-                               content = await File(file.path!).readAsString();
-                             }
-
-                             final backupService = ref.read(backupServiceProvider(ref));
-                             final success = await backupService.restoreFromBackup(content);
-                             if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                  content: Text(success ? '✅ 資料已還原成功！' : '❌ 還原失敗，請檢查檔案格式'),
-                                  backgroundColor: success ? Colors.green : Colors.red,
-                                ));
-                             }
-                          }
-                       }
-                    },
+                    leading: const Icon(Icons.auto_awesome_rounded, color: Colors.indigo),
+                    title: const Text('全能數據匯入與恢復 (JSON)', style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: const Text('支援 Elite 備份與 Jiffy 歷史導出檔案', style: TextStyle(fontSize: 12)),
+                    onTap: () => _showImportJiffyDialog(context),
                   ),
                   const Divider(indent: 70, height: 1),
                    ListTile(
@@ -682,6 +778,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       await saveAndShareFile(csv, 'EliteTracker_History_$date.csv');
                       if (mounted) {
                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('📊 CSV 日誌已產生')));
+                      }
+                    },
+                  ),
+                  const Divider(indent: 70, height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.stars_outlined, color: Colors.amber),
+                    title: const Text('匯出目標紀錄 (CSV)', style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: const Text('包含目標設定與每日達成歷史', style: TextStyle(fontSize: 12)),
+                    onTap: () async {
+                      final backupService = ref.read(backupServiceProvider(ref));
+                      final csv = backupService.createGoalsCsv();
+                      final date = DateTime.now().toIso8601String().split('T')[0];
+                      await saveAndShareFile(csv, 'EliteTracker_Goals_$date.csv');
+                      if (mounted) {
+                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('🎯 目標紀錄 CSV 已產生')));
                       }
                     },
                   ),
@@ -801,20 +912,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('類別與顏色管理', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue)),
-                Row(
-                  children: [
-                    TextButton.icon(
-                      onPressed: () => _showArchivedCategoriesDialog(context),
-                      icon: const Icon(Icons.archive_outlined, size: 18, color: Colors.blueGrey),
-                      label: const Text('管理封存', style: TextStyle(color: Colors.blueGrey)),
-                    ),
-                    const SizedBox(width: 8),
-                    TextButton.icon(
-                      onPressed: () => _showAddCategory(context),
-                      icon: const Icon(Icons.add_circle_outline, size: 18),
-                      label: const Text('新增項目'),
-                    ),
-                  ],
+                TextButton.icon(
+                  onPressed: () => _showAddCategory(context),
+                  icon: const Icon(Icons.add_circle_outline, size: 18),
+                  label: const Text('新增項目'),
                 ),
               ],
             ),
@@ -829,7 +930,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
               child: Column(
                 children: [
-                  for (var entry in catColors.entries)
+                  for (var entry in visibleEntries)
                     ListTile(
                       onTap: () => showCategoryOptions(context, entry.key, ref),
                       leading: Container(
@@ -840,31 +941,33 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         ),
                         child: CircleAvatar(backgroundColor: entry.value, radius: 8),
                       ),
-                      title: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              entry.key, 
-                              style: const TextStyle(fontWeight: FontWeight.w500),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (hiddenCategories.contains(entry.key))
-                            Padding(
-                              padding: const EdgeInsets.only(left: 8),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(color: Colors.grey.withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
-                                child: const Text('隱藏中', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                              ),
-                            ),
-                        ],
+                      title: Text(
+                        entry.key, 
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                        overflow: TextOverflow.ellipsis,
                       ),
                       trailing: IconButton(
                         icon: const Icon(Icons.more_vert),
                         onPressed: () => showCategoryOptions(context, entry.key, ref),
                       ),
                     ),
+                  if (visibleEntries.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(24.0),
+                      child: Text('目前沒有任何活躍項目', style: TextStyle(color: Colors.grey)),
+                    ),
+                  const Divider(height: 1),
+                  ListTile(
+                    onTap: () => _showArchivedFolderDialog(context),
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(color: Colors.blueGrey.withOpacity(0.1), shape: BoxShape.circle),
+                      child: const Icon(Icons.folder_zip_outlined, color: Colors.blueGrey, size: 16),
+                    ),
+                    title: const Text('封存項目資料夾', style: TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.bold)),
+                    subtitle: Text('目前共有 ${hiddenCategories.length} 個封存項目', style: const TextStyle(fontSize: 11)),
+                    trailing: const Icon(Icons.chevron_right_rounded, color: Colors.blueGrey),
+                  ),
                 ],
               ),
             ),
@@ -879,7 +982,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             contentPadding: const EdgeInsets.symmetric(horizontal: 20),
             title: const Text('深色模式'),
             value: themeMode == ThemeMode.dark,
-            onChanged: (v) => ref.read(themeModeProvider.notifier).toggle(v),
+            onChanged: (v) => (ref.read(themeModeProvider.notifier) as dynamic).setThemeMode(v ? ThemeMode.dark : ThemeMode.light),
           ),
           
           const Divider(indent: 20, endIndent: 20),
@@ -941,95 +1044,67 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-              ),
-              child: ListTile(
-                leading: Container(
-                  width: 40, height: 40,
-                  decoration: BoxDecoration(color: Colors.orange.withOpacity(0.12), shape: BoxShape.circle),
-                  child: const Icon(Icons.input_rounded, color: Colors.orange, size: 22),
-                ),
-                title: const Text('導入 Jiffy 數據', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                subtitle: const Text('由 JSON 文件導入歷史紀錄', style: TextStyle(fontSize: 14)),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: () => _showImportJiffyDialog(context),
-              ),
-            ),
-          ),
           const Divider(indent: 20, endIndent: 20),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 24, 20, 8),
-            child: Text('危險區域', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red)),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.red.withOpacity(0.2)),
-              ),
-              child: ListTile(
-                leading: const Icon(Icons.delete_forever_rounded, color: Colors.red),
-                title: const Text('清空所有計時數據', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-                subtitle: const Text('此操作無法復原，將同步刪除雲端紀錄', style: TextStyle(fontSize: 12)),
-                onTap: () => _showClearAllConfirmationDialog(context),
-              ),
-            ),
-          ),
-          
           const Divider(indent: 20, endIndent: 20),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
-            child: Row(
-              children: [
-                const Icon(Icons.bug_report_outlined, color: Colors.purple, size: 20),
-                const SizedBox(width: 8),
-                Text('開發者調試工具', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.purple)),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.purple.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.purple.withOpacity(0.2)),
+                color: Colors.grey.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.grey.withOpacity(0.2)),
               ),
-              child: Column(
+              child: ExpansionTile(
+                leading: const Icon(Icons.settings_suggest_outlined, color: Colors.indigo),
+                title: Text('進階系統工具與危險區域', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.indigo)),
+                subtitle: const Text('包含雲端清理、調試工具與重置選項', style: TextStyle(fontSize: 12)),
                 children: [
+                  // --- 1. 雲端維護 ---
                   ListTile(
-                    leading: const Icon(Icons.camera_alt_outlined, color: Colors.purple),
-                    title: const Text('建立數據快照', style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: const Text('儲存當前所有本地數據狀態', style: TextStyle(fontSize: 12)),
+                    leading: const Icon(Icons.cleaning_services_rounded, color: Colors.blue),
+                    title: const Text('雲端數據深層去重', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    subtitle: const Text('掃除重複的舊格式紀錄並優化雲端空間', style: TextStyle(fontSize: 11)),
+                    onTap: () async {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('🧹 正在進行雲端深層大掃除...'), duration: Duration(seconds: 1))
+                      );
+                      final count = await ref.read(sessionsProvider.notifier).forceCloudCleanup();
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('✅ 清理完成！已從雲端移除 $count 筆冗餘紀錄'),
+                            backgroundColor: Colors.green.withValues(alpha: 0.8),
+                          )
+                        );
+                      }
+                    },
+                  ),
+                  const Divider(height: 1, indent: 50),
+                  
+                  // --- 2. 開發者工具 ---
+                  ListTile(
+                    leading: const Icon(Icons.bug_report_outlined, color: Colors.purple),
+                    title: const Text('建立數據快照 (Snapshot)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    subtitle: const Text('儲存當前所有本地數據狀態以供還原', style: TextStyle(fontSize: 11)),
                     onTap: () async {
                       final prefs = ref.read(storageServiceProvider).prefs;
                       await DebugHelper.createSnapshot(prefs);
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('📸 快照已建立成功'), behavior: SnackBarBehavior.floating));
-                        setState(() {}); // Refresh to show restore button if it was hidden
                       }
                     },
                   ),
-                  const Divider(height: 1),
                   ListTile(
                     enabled: DebugHelper.hasSnapshot(ref.read(storageServiceProvider).prefs),
                     leading: const Icon(Icons.restore_outlined, color: Colors.purple),
-                    title: const Text('還原快照', style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: const Text('回到上一個儲存的數據版本', style: TextStyle(fontSize: 12)),
+                    title: const Text('還原快照', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    subtitle: const Text('回到上一個儲存的數據版本', style: TextStyle(fontSize: 11)),
                     onTap: () {
                       showDialog(
                         context: context,
                         builder: (ctx) => AlertDialog(
                           title: const Text('確定要還原嗎？'),
-                          content: const Text('這將覆蓋當前所有本地數據，並可能導致雲端同步衝突。建議僅在開發調試時使用。'),
+                          content: const Text('這將覆蓋當前所有本地數據。建議僅在開發調試時使用。'),
                           actions: [
                             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
                             ElevatedButton(
@@ -1049,31 +1124,33 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       );
                     },
                   ),
-                ],
-              ),
-            ),
-          ),
-          const Divider(indent: 20, endIndent: 20),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
-            child: Text('危險區域', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red)),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.red.withOpacity(0.2)),
-              ),
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.delete_forever, color: Colors.red),
-                    title: const Text('重置所有數據 (歸零)', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
-                    subtitle: const Text('刪除所有歷史記錄、目標、分類與雲端數據', style: TextStyle(fontSize: 12)),
-                    onTap: () => _showResetConfirmation(context, ref),
+                  
+                  // --- 3. 危險區域 ---
+                  Container(
+                    margin: const EdgeInsets.symmetric(vertical: 8),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    color: Colors.red.withOpacity(0.05),
+                    child: Column(
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Text('危險區域', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 2)),
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.delete_forever_rounded, color: Colors.red),
+                          title: const Text('清空計時數據 (Sync)', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 14)),
+                          subtitle: const Text('同步刪除雲端與本地的所有專注歷史紀錄', style: TextStyle(fontSize: 11)),
+                          onTap: () => _showClearAllConfirmationDialog(context),
+                        ),
+                        const Divider(height: 1, indent: 50, color: Colors.redAccent),
+                        ListTile(
+                          leading: const Icon(Icons.warning_amber_rounded, color: Colors.red),
+                          title: const Text('系統歸一重置 (Master Reset)', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 14)),
+                          subtitle: const Text('抹除所有紀錄、目標與分類 (需要 RESET 確認)', style: TextStyle(fontSize: 11)),
+                          onTap: () => _showResetConfirmation(context, ref),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -1192,6 +1269,61 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           content: Text('❌ 重置失敗: $e'),
           backgroundColor: Colors.red,
         ));
+      }
+    }
+  }
+
+  Future<void> _handleLogout(BuildContext context, WidgetRef ref) async {
+    // 1. 顯示處理中彈窗
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      // 2. 執行最後一次同步 (確保隱私前資料已入雲)
+      final firestore = ref.read(firestoreServiceProvider);
+      if (firestore != null) {
+        await ref.read(sessionsProvider.notifier).syncNow();
+        await ref.read(goalProvider.notifier).syncNow();
+        await ref.read(taskGoalProvider.notifier).syncNow();
+      }
+
+      // 3. 【關鍵安全鎖】先執行正式簽退，斷開與雲端所有連線權限
+      await ref.read(authServiceProvider).signOut();
+
+      // 4. 正式斷開後，徹底抹除本地持久化儲存 (此時已無權限誤傷雲端資料)
+      final storage = ref.read(storageServiceProvider);
+      await storage.clearAllLocalData();
+
+      // 5. 重置各 Provider 的記憶體狀態，立即反映到 UI
+      ref.read(sessionsProvider.notifier).resetState();
+      ref.read(goalProvider.notifier).resetState();
+      ref.read(taskGoalProvider.notifier).resetState();
+      ref.read(categoryColorProvider.notifier).resetState();
+      ref.read(hiddenCategoriesProvider.notifier).resetState();
+      ref.read(timerProvider.notifier).resetState();
+      ref.read(timerColorProvider.notifier).resetToDefault();
+      ref.read(backgroundProvider.notifier).reset();
+      ref.read(themeModeProvider.notifier).resetToDefault();
+
+      // 6. 關閉讀取彈窗並提示
+      if (context.mounted) {
+        Navigator.pop(context); // 關閉 Loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ 已安全登出並抹除本地數據'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.pop(context); // 關閉 Loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('登出過程發生錯誤: $e')),
+        );
       }
     }
   }

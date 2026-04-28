@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../services/update_service.dart';
 import 'home_page.dart';
 import 'statistics_page.dart';
@@ -24,13 +26,28 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   ];
 
   @override
-  Widget build(BuildContext context) {
-    // Global Update Listener
-    ref.listen(updateProvider, (previous, next) {
-      if (next != null && next.isUpdateAvailable) {
-        _showUpdateNotification(next);
+  void initState() {
+    super.initState();
+    // 啟動時檢查更新
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // 1. 檢查更新
+      final info = await UpdateService.checkUpdate();
+      if (info != null && mounted) {
+        UpdateService.showUpdateDialog(context, info);
+      }
+
+      // 2. 請求 Android 13+ 通知權限 (必要用於持久化通知欄)
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+        final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+        await flutterLocalNotificationsPlugin
+            .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+            ?.requestNotificationsPermission();
       }
     });
+  }
+
+  @override
+  Widget build(BuildContext context) {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -46,70 +63,6 @@ class _MainScreenState extends ConsumerState<MainScreen> {
           const NavigationDestination(icon: Icon(Icons.flag_outlined), selectedIcon: Icon(Icons.flag), label: '目標'),
           const NavigationDestination(icon: Icon(Icons.history_outlined), selectedIcon: Icon(Icons.history), label: '歷史'),
           const NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: '設定'),
-        ],
-      ),
-    );
-  }
-
-  void _showUpdateNotification(UpdateInfo info) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.system_update_alt, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                info.isPatch ? '🚀 已發現新修復包，立即更新？' : '✨ 網頁版有新功能，請重新整理！',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
-        action: SnackBarAction(
-          label: info.isPatch ? '下載並更新' : '立即重新整理',
-          textColor: Colors.yellow,
-          onPressed: () async {
-            if (info.isPatch) {
-              await ref.read(updateProvider.notifier).performUpdate();
-              if (mounted) {
-                _showRestartDialog();
-              }
-            } else {
-              await ref.read(updateProvider.notifier).performUpdate();
-              // Standard web refresh
-              // window.location.reload(); is not available in pure dart, but we can use html or just notify
-              // For web, if using flutter_web_plugins or just generic:
-              // Actually, standard window.location.reload() can be used via universal_html or dart:js
-              // Or just show another snackbar saying "Refreshing..." and use a helper.
-            }
-          },
-        ),
-        duration: const Duration(seconds: 10),
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
-
-  void _showRestartDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('✅ 更新已就緒'),
-        content: const Text('修復包已下載完成，需要重新啟動 APP 才能套用更新。現在要重啟嗎？'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('稍後再說')),
-          ElevatedButton(
-            onPressed: () {
-              // We'll use a platform-specific restart or just exit for simplicity
-              // In production Shorebird apps, you might need a custom restart helper
-              Navigator.pop(ctx);
-            },
-            child: const Text('立即重啟'),
-          ),
         ],
       ),
     );

@@ -1,7 +1,11 @@
+import 'package:vibration/vibration.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:home_widget/home_widget.dart';
 import '../models/time_session.dart';
 import 'storage_provider.dart';
 import 'session_provider.dart';
@@ -9,13 +13,12 @@ import 'firestore_provider.dart';
 import 'category_provider.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:live_activities/live_activities.dart';
 import '../services/media_session_service.dart';
 
 class TimerColorNotifier extends Notifier<Color> {
   @override
   Color build() {
-    final storage = ref.read(storageServiceProvider);
+    final storage = ref.watch(storageServiceProvider);
     final local = storage.loadTimerColor(const Color(0xFF03DAC6));
     final firestore = ref.watch(firestoreServiceProvider);
 
@@ -117,8 +120,6 @@ class TimerState {
 
 class TimerNotifier extends Notifier<TimerState> {
   Timer? _timer;
-  final _liveActivities = LiveActivities();
-  String? _activityId;
   bool _isSyncingFromCloud = false;
   DateTime? _lastManualActionTime;
 
@@ -128,7 +129,7 @@ class TimerNotifier extends Notifier<TimerState> {
     final uid = firestore.userId;
     // v3.UltraSync_MASTER_UI_BRANDED: Official Design & Legacy Pro Suite
     final idPart = uid.length > 8 ? uid.substring(uid.length - 8) : uid;
-    return '$idPart (v3.UltraSync_MASTER_UI_BRANDED)';
+    return idPart;
   }
 
   String _formatTime(int seconds) {
@@ -141,7 +142,7 @@ class TimerNotifier extends Notifier<TimerState> {
 
   @override
   TimerState build() {
-    final storage = ref.read(storageServiceProvider);
+    final storage = ref.watch(storageServiceProvider);
     final localJson = storage.loadTimerState();
     final firestore = ref.watch(firestoreServiceProvider);
 
@@ -163,38 +164,60 @@ class TimerNotifier extends Notifier<TimerState> {
       final local = TimerState.fromJson(localJson);
       if (local.isRunning) {
         Future.microtask(() => _startTicker());
+        // ZOMBIE RECOVERY: Ensure service is actually running if state says so
+        Future.microtask(() => _restartServiceIfNeeded());
       }
       
-      // Listen for background service events (Android Notification Actions)
-      if (!kIsWeb) {
-        FlutterBackgroundService().on('statusChange').listen((event) {
-          if (event != null && !kIsWeb) {
-            final bool remoteRunning = event['isRunning'];
-            final int remoteSeconds = event['currentElapsed'];
-            
-            if (remoteRunning != state.isRunning) {
-              if (remoteRunning) {
-                state = state.copyWith(
-                  isRunning: true, 
-                  startTime: DateTime.now().toUtc().subtract(Duration(seconds: remoteSeconds)),
-                  baseSeconds: 0,
+      // Ensure initial widget sync
+      Future.microtask(() => _syncToWidget());
+    }
+
+    // Listen for background service events (Android Notification Actions) ALWAYS
+    if (!kIsWeb) {
+      FlutterBackgroundService().on('statusChange').listen((event) {
+        if (event != null && !kIsWeb) {
+          final bool remoteRunning = event['isRunning'];
+          final int remoteSeconds = event['currentElapsed'];
+          
+          if (remoteRunning != state.isRunning) {
+            _lastManualActionTime = DateTime.now(); // Prevent cloud bounce overwrite!
+            if (remoteRunning) {
+              state = state.copyWith(
+                isRunning: true, 
+                startTime: DateTime.now().toUtc().subtract(Duration(seconds: remoteSeconds)),
+                baseSeconds: 0,
+              );
+              _startTicker();
+            } else {
+              _timer?.cancel();
+              
+              final delta = state.startTime != null 
+                  ? DateTime.now().toUtc().difference(state.startTime!).inSeconds 
+                  : 0;
+                  
+              if (delta > 0) {
+                final session = TimeSession(
+                  category: state.category,
+                  durationSeconds: delta,
+                  date: DateTime.now().toLocal().subtract(Duration(seconds: delta)),
                 );
-                _startTicker();
-              } else {
-                _timer?.cancel();
-                state = state.copyWith(isRunning: false, baseSeconds: remoteSeconds);
+                ref.read(sessionsProvider.notifier).addSession(session);
               }
-              _pushToCloud();
+
+              state = state.copyWith(isRunning: false, baseSeconds: remoteSeconds, startTime: null);
             }
+            _pushToCloud();
           }
-        });
+        }
+      });
 
-        FlutterBackgroundService().on('stopFromNotification').listen((event) {
-          stopAndSave();
-        });
-      }
+      FlutterBackgroundService().on('stopFromNotification').listen((event) {
+        stopAndSave();
+      });
+    }
 
-      return local;
+    if (localJson != null) {
+      return TimerState.fromJson(localJson);
     }
 
     return const TimerState();
@@ -233,9 +256,16 @@ class TimerNotifier extends Notifier<TimerState> {
     }
   }
 
-  void _syncToBackground() {
+  void _syncToBackground() async {
     if (kIsWeb) return;
     try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('bg_handoff_state', jsonEncode({
+        'seconds': state.currentElapsed,
+        'category': state.category,
+        'isRunning': state.isRunning,
+      }));
+
       FlutterBackgroundService().invoke('setTimerData', {
         'seconds': state.currentElapsed,
         'category': state.category,
@@ -243,6 +273,20 @@ class TimerNotifier extends Notifier<TimerState> {
       });
     } catch (e) {
        debugPrint('Background sync failed: $e');
+    }
+  }
+
+  void _syncToWidget() {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    try {
+      HomeWidget.saveWidgetData<String>('task_name', state.category);
+      HomeWidget.saveWidgetData<String>('timer_text', _formatTime(state.currentElapsed));
+      HomeWidget.updateWidget(
+        name: 'MasterWidgetProvider',
+        androidName: 'com.example.time_tracker.MasterWidgetProvider',
+      );
+    } catch (e) {
+      debugPrint('Widget sync failed: $e');
     }
   }
 
@@ -256,12 +300,14 @@ class TimerNotifier extends Notifier<TimerState> {
       
       // Auto-save every 5 ticks (approx 2.5 seconds) to handle background killing
       if (timer.tick % 5 == 0) {
-        _syncToBackground();
+        // Removed _syncToBackground() here to prevent the UI from recursively overriding the background service state
         _pushToCloud();
+        _syncToWidget();
       }
     });
     _syncToBackground();
     _syncToLiveActivity();
+    _syncToWidget();
     if (kIsWeb) {
       MediaSessionService.setPlaybackState(state.isRunning);
       MediaSessionService.updateMetadata(state.category, _formatTime(state.currentElapsed));
@@ -269,28 +315,7 @@ class TimerNotifier extends Notifier<TimerState> {
   }
 
   Future<void> _syncToLiveActivity() async {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
-    final data = {
-      'category': '😭 ${state.category}',
-      'startTime': state.startTime?.millisecondsSinceEpoch,
-      'isRunning': state.isRunning,
-      'elapsed': state.currentElapsed,
-    };
-    try {
-      if (state.isRunning) {
-        if (_activityId == null) {
-          final id = DateTime.now().millisecondsSinceEpoch.toString();
-          _activityId = await _liveActivities.createActivity(id, data);
-        } else {
-          await _liveActivities.updateActivity(_activityId!, data);
-        }
-      } else if (_activityId != null) {
-        await _liveActivities.endActivity(_activityId!);
-        _activityId = null;
-      }
-    } catch (e) {
-      debugPrint('Live Activity sync failed: $e');
-    }
+    // Disabled
   }
 
   void changeCategory(String newCategory) {
@@ -308,6 +333,7 @@ class TimerNotifier extends Notifier<TimerState> {
   void handleCategoryRename(String oldCat, String newCat) {
     if (state.category == oldCat) {
       state = state.copyWith(category: newCat);
+      _syncToWidget();
       _pushToCloud();
     }
   }
@@ -339,14 +365,30 @@ class TimerNotifier extends Notifier<TimerState> {
 
   void toggleTimer() {
     _lastManualActionTime = DateTime.now();
-    HapticFeedback.mediumImpact();
+    HapticFeedback.selectionClick(); // 開始或暫停時的輕微震動
+
     if (state.isRunning) {
       _timer?.cancel();
-      final elapsed = state.currentElapsed;
-      state = state.copyWith(isRunning: false, baseSeconds: elapsed);
+      
+      final delta = state.startTime != null 
+          ? DateTime.now().toUtc().difference(state.startTime!).inSeconds 
+          : 0;
+          
+      // AUTO-SPLIT: Save current segment as a session immediately
+      if (delta > 0) {
+        final session = TimeSession(
+          category: state.category,
+          durationSeconds: delta,
+          date: DateTime.now().toLocal().subtract(Duration(seconds: delta)),
+        );
+        ref.read(sessionsProvider.notifier).addSession(session);
+      }
+
+      final totalElapsed = state.currentElapsed;
+      state = state.copyWith(isRunning: false, baseSeconds: totalElapsed, startTime: null);
       if (kIsWeb) {
         MediaSessionService.setPlaybackState(false);
-        MediaSessionService.updateMetadata(state.category, _formatTime(elapsed));
+        MediaSessionService.updateMetadata(state.category, '00:00');
       }
     } else {
       state = state.copyWith(isRunning: true, startTime: DateTime.now().toUtc());
@@ -359,18 +401,26 @@ class TimerNotifier extends Notifier<TimerState> {
     }
     _syncToBackground();
     _syncToLiveActivity();
+    _syncToWidget();
     _pushToCloud();
   }
 
-  void stopAndSave({String? note}) {
+  void stopAndSave({String? note}) async {
     _timer?.cancel();
-    HapticFeedback.vibrate();
-    final elapsed = state.currentElapsed;
-    if (elapsed > 0) {
+    
+    // 強效震動兩下
+    if (await Vibration.hasVibrator() ?? false) {
+      Vibration.vibrate(pattern: [0, 300, 200, 300]);
+    }
+    
+    final delta = state.isRunning && state.startTime != null
+          ? DateTime.now().toUtc().difference(state.startTime!).inSeconds 
+          : 0;
+    if (delta > 0) {
       final session = TimeSession(
         category: state.category,
-        durationSeconds: elapsed,
-        date: DateTime.now().toLocal(),
+        durationSeconds: delta,
+        date: DateTime.now().toLocal().subtract(Duration(seconds: delta)),
         note: note,
       );
       ref.read(sessionsProvider.notifier).addSession(session);
@@ -387,12 +437,12 @@ class TimerNotifier extends Notifier<TimerState> {
     state = TimerState(category: nextCategory);
     if (!kIsWeb) FlutterBackgroundService().invoke('stopService');
     _syncToLiveActivity();
+    _syncToWidget();
     _pushToCloud();
   }
 
   void resetTimer() {
     _timer?.cancel();
-    HapticFeedback.selectionClick();
     state = state.copyWith(isRunning: false, baseSeconds: 0, startTime: null);
     if (kIsWeb) {
       MediaSessionService.setPlaybackState(false);
@@ -400,6 +450,7 @@ class TimerNotifier extends Notifier<TimerState> {
     }
     _syncToBackground();
     _syncToLiveActivity();
+    _syncToWidget();
     _pushToCloud();
   }
 
@@ -425,6 +476,27 @@ class TimerNotifier extends Notifier<TimerState> {
 
   void disposeTimer() {
     _timer?.cancel();
+  }
+
+  void requestBackgroundSync() {
+    if (kIsWeb) return;
+    try {
+      FlutterBackgroundService().invoke('requestSync');
+      // On resume, also double check if service is alive
+      _restartServiceIfNeeded();
+    } catch (_) {}
+  }
+
+  Future<void> _restartServiceIfNeeded() async {
+    if (kIsWeb) return;
+    final service = FlutterBackgroundService();
+    final bool isRunning = await service.isRunning();
+    if (state.isRunning && !isRunning) {
+      debugPrint('TimerNotifier: Zombie detected! Restarting killed background service...');
+      // Ensure handoff buffer is fresh before starting
+      _syncToBackground();
+      await service.startService();
+    }
   }
 }
 

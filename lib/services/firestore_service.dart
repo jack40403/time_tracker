@@ -21,10 +21,9 @@ class FirestoreService {
   DocumentReference get _settingsRef =>
       _db.collection('users').doc(userId).collection('settings').doc('app_config');
 
-  // Standardized ID generation (Seconds precision for cross-platform stability)
+  // Standardized ID generation (No-Emoji stable IDs)
   String _getSessionId(TimeSession s) {
-    final fixedTime = (s.date.toUtc().millisecondsSinceEpoch ~/ 1000) * 1000;
-    return '${s.category}_$fixedTime';
+    return TimeSession.generateId(s.category, s.date);
   }
 
   // --- Sessions Sync ---
@@ -36,7 +35,10 @@ class FirestoreService {
         .map((snapshot) {
       debugPrint('FirestoreService: Received ${snapshot.docs.length} sessions from cloud');
       return snapshot.docs.map((doc) {
-        return TimeSession.fromJson(doc.data() as Map<String, dynamic>);
+        final data = doc.data() as Map<String, dynamic>;
+        // Ensure the ID in the object matches the document ID for stability
+        data['id'] = doc.id;
+        return TimeSession.fromJson(data);
       }).toList();
     });
   }
@@ -76,6 +78,24 @@ class FirestoreService {
       await _sessionsRef.doc(docId).delete();
     } catch (e) {
       debugPrint('FirestoreService Error deleting session: $e');
+    }
+  }
+
+  Future<void> batchDeleteSessionsByIds(List<String> ids) async {
+    if (ids.isEmpty) return;
+    debugPrint('FirestoreService: Batch deleting ${ids.length} sessions by ID');
+    try {
+      for (var i = 0; i < ids.length; i += 500) {
+        final batch = _db.batch();
+        final chunk = ids.skip(i).take(500);
+        for (var id in chunk) {
+          batch.delete(_sessionsRef.doc(id));
+        }
+        await batch.commit();
+      }
+      debugPrint('FirestoreService: Batch delete by IDs complete');
+    } catch (e) {
+      debugPrint('FirestoreService Error in batch delete by IDs: $e');
     }
   }
 

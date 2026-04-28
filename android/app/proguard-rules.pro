@@ -1,0 +1,2 @@
+-keep class com.example.time_tracker.MasterWidgetProvider { *; }
+-keep class es.antonborri.home_widget.** { *; }

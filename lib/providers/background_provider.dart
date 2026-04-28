@@ -25,17 +25,32 @@ class BackgroundState {
 class BackgroundNotifier extends Notifier<BackgroundState> {
   @override
   BackgroundState build() {
-    // Sync from cloud when settings change
+    // 監聽雲端設定，實現背景同步
     ref.listen(cloudSettingsProvider, (previous, next) {
       final cloudSettings = next.value;
-      if (cloudSettings != null && cloudSettings.containsKey('bg_color')) {
-        final int colorVal = cloudSettings['bg_color'];
-        final Color cloudColor = Color(colorVal);
-        
-        if (state.color?.value != cloudColor.value) {
-          state = state.copyWith(color: cloudColor, isCustom: true, imagePath: null);
+      if (cloudSettings != null) {
+        Color? remoteColor;
+        double? remoteOpacity;
+        bool changed = false;
+
+        if (cloudSettings.containsKey('bg_color')) {
+          remoteColor = Color(cloudSettings['bg_color']);
+          if (state.color?.value != remoteColor.value) changed = true;
+        }
+        if (cloudSettings.containsKey('bg_opacity')) {
+          remoteOpacity = (cloudSettings['bg_opacity'] as num).toDouble();
+          if (state.opacity != remoteOpacity) changed = true;
+        }
+
+        if (changed) {
+          state = state.copyWith(
+            color: remoteColor ?? state.color,
+            opacity: remoteOpacity ?? state.opacity,
+            isCustom: true,
+            imagePath: null, // 跨裝置目前不自動載入本地圖片路徑
+          );
           final storage = ref.read(storageServiceProvider);
-          storage.saveBackgroundSettings(cloudColor.value, null, true, state.opacity);
+          storage.saveBackgroundSettings(state.color?.value, null, true, state.opacity);
         }
       }
     });
@@ -78,10 +93,16 @@ class BackgroundNotifier extends Notifier<BackgroundState> {
     final storage = ref.read(storageServiceProvider);
     storage.saveBackgroundSettings(state.color?.value, state.imagePath, state.isCustom, state.opacity);
     
-    // Sync color to cloud if applicable
-    if (state.color != null) {
-      final firestore = ref.read(firestoreServiceProvider);
-      firestore?.updateSettings({'bg_color': state.color!.value});
+    // 將最新設定同步到雲端
+    final firestore = ref.read(firestoreServiceProvider);
+    if (firestore != null) {
+      final Map<String, dynamic> updates = {
+        'bg_opacity': state.opacity,
+      };
+      if (state.color != null) {
+        updates['bg_color'] = state.color!.value;
+      }
+      firestore.updateSettings(updates);
     }
   }
 }

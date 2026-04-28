@@ -6,8 +6,23 @@ import 'firestore_provider.dart';
 class ThemeModeNotifier extends Notifier<ThemeMode> {
   @override
   ThemeMode build() {
-    final storage = ref.read(storageServiceProvider);
+    final storage = ref.watch(storageServiceProvider);
     final local = storage.loadThemeMode();
+
+    // 監聽雲端設定，實現跨裝置同步
+    ref.listen(cloudSettingsProvider, (previous, next) {
+      final cloudSettings = next.value;
+      if (cloudSettings != null && cloudSettings.containsKey('theme_mode')) {
+        final int index = cloudSettings['theme_mode'];
+        if (index >= 0 && index < ThemeMode.values.length) {
+          final cloudMode = ThemeMode.values[index];
+          if (state != cloudMode) {
+            state = cloudMode;
+            _saveLocally(cloudMode);
+          }
+        }
+      }
+    });
 
     // Merge-on-login: Push local theme preference to cloud on first login
     ref.listen(firestoreServiceProvider, (prev, next) {
@@ -24,6 +39,12 @@ class ThemeModeNotifier extends Notifier<ThemeMode> {
     state = newMode;
     _saveLocally(newMode);
     _saveToCloud(newMode);
+  }
+
+  void setThemeMode(ThemeMode mode) {
+    state = mode;
+    _saveLocally(mode);
+    _saveToCloud(mode);
   }
 
   void resetToDefault() {

@@ -7,7 +7,7 @@ class GoalOrderNotifier extends Notifier<List<String>> {
 
   @override
   List<String> build() {
-    final stored = ref.read(storageServiceProvider).prefs.getString(_key);
+    final stored = ref.watch(storageServiceProvider).prefs.getString(_key);
     if (stored != null) {
       return List<String>.from(jsonDecode(stored));
     }

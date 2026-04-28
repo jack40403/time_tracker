@@ -8,7 +8,7 @@ import 'category_provider.dart';
 class SessionsNotifier extends Notifier<List<TimeSession>> {
   @override
   List<TimeSession> build() {
-    final storage = ref.read(storageServiceProvider);
+    final storage = ref.watch(storageServiceProvider);
     final localSessions = storage.loadSessions();
     final firestore = ref.watch(firestoreServiceProvider);
 
@@ -54,40 +54,139 @@ class SessionsNotifier extends Notifier<List<TimeSession>> {
     }
   }
 
-  void _syncWithCloud(List<dynamic> cloudSessions) {
+  // 強制執行深層雲端清理 (原子級修復：Fetch -> Deduplicate -> Wipe -> Repopulate)
+  Future<int> forceCloudCleanup() async {
+    final firestore = ref.read(firestoreServiceProvider);
+    if (firestore == null) return 0;
+
+    try {
+      // 1. 從伺服器強制抓取最完整的資料
+      final cloudData = await firestore.fetchSessionsOnce();
+      final Map<String, TimeSession> normalizedMap = {};
+
+      for (var s in cloudData) {
+        final session = TimeSession.fromJson(s as Map<String, dynamic>);
+        final stableId = TimeSession.generateId(session.category, session.date);
+
+        // 模糊查重與優先級保留
+        if (normalizedMap.containsKey(stableId)) {
+          final existing = normalizedMap[stableId]!;
+          bool shouldReplace = (existing.note == null || existing.note!.isEmpty) && 
+                               (session.note != null && session.note!.isNotEmpty);
+          if (!shouldReplace && session.category.length > existing.category.length) {
+            shouldReplace = true;
+          }
+          if (shouldReplace) normalizedMap[stableId] = session.copyWith(id: stableId);
+        } else {
+          normalizedMap[stableId] = session.copyWith(id: stableId);
+        }
+      }
+
+      final List<TimeSession> cleanSessions = normalizedMap.values.toList();
+      
+      // 2. 執行原子級操作：清空雲端並重新上傳乾淨數據
+      debugPrint('SessionsNotifier: NUCLEAR CLEANUP START. Clearing cloud...');
+      await firestore.deleteAllSessions(); // 清空目前的 Session 集合
+      
+      debugPrint('SessionsNotifier: NUCLEAR CLEANUP. Repopulating Cloud with ${cleanSessions.length} clean sessions...');
+      await firestore.batchUploadSessions(cleanSessions);
+      
+      // 3. 更新本地狀態以對齊乾淨數據
+      state = cleanSessions..sort((a, b) => b.date.compareTo(a.date));
+      _saveLocally(state);
+      
+      return cloudData.length - cleanSessions.length;
+    } catch (e) {
+      debugPrint('SessionsNotifier: Atomic cleanup failed: $e');
+      return 0;
+    }
+  }
+
+  Future<void> _syncWithCloud(List<dynamic> cloudSessions) async {
     // If cloud has data, it is the ABSOLUTE source of truth.
-    // Discard everything local except EXTREMELY recent sessions (last 60 seconds).
+    // We synchronize and deduplicate based on Fuzzy IDs (BaseName + Timestamp)
     
-    final Map<String, TimeSession> cloudMap = {};
+    final List<String> zombieIds = [];
+    final Map<String, TimeSession> normalizedMap = {};
+    
+    // 1. Process Cloud Data (Normalize IDs & Fuzzy Deduplication)
     for (var s in cloudSessions) {
-      final session = TimeSession.fromJson(s as Map<String, dynamic>);
-      // TRUNCATE milliseconds to ensure stable IDs across platforms (consistent with FirestoreService)
-      final fixedTime = (session.date.toUtc().millisecondsSinceEpoch ~/ 1000) * 1000;
-      final id = '${session.category}_$fixedTime';
-      cloudMap[id] = session;
+      TimeSession session;
+      if (s is TimeSession) {
+        session = s;
+      } else if (s is Map<String, dynamic>) {
+        session = TimeSession.fromJson(s);
+      } else {
+        continue;
+      }
+      
+      final String cloudDocId = session.id;
+      final stableId = TimeSession.generateId(session.category, session.date);
+      
+      // Identify "Zombie" IDs: 
+      // If the cloud ID doesn't match the stable ID (e.g. contains emojis or different format), mark for deletion
+      if (cloudDocId != stableId) {
+        zombieIds.add(cloudDocId);
+      }
+      
+      // Fuzzy Deduplication:
+      if (normalizedMap.containsKey(stableId)) {
+        final existing = normalizedMap[stableId]!;
+        
+        // Priority Rule:
+        // - Keep if it has a note.
+        // - Keep if the category name is "richer" (has more symbols/emojis).
+        bool shouldReplace = (existing.note == null || existing.note!.isEmpty) && 
+                             (session.note != null && session.note!.isNotEmpty);
+        
+        if (!shouldReplace) {
+          if (session.category.length > existing.category.length) {
+            shouldReplace = true;
+          }
+        }
+
+        if (shouldReplace) {
+           normalizedMap[stableId] = session.copyWith(id: stableId);
+        }
+      } else {
+        normalizedMap[stableId] = session.copyWith(id: stableId);
+      }
     }
 
     final now = DateTime.now();
-    final List<TimeSession> finalSessions = cloudMap.values.toList();
     
-    // Check if we have any very new unsynced local sessions to keep
+    // 2. Process Local Data (Normalize & Sync)
     for (var s in state) {
-      final fixedTime = (s.date.toUtc().millisecondsSinceEpoch ~/ 1000) * 1000;
-      final id = '${s.category}_$fixedTime';
+      final stableId = TimeSession.generateId(s.category, s.date);
       
-      if (!cloudMap.containsKey(id)) {
+      if (!normalizedMap.containsKey(stableId)) {
         final ageInSec = now.difference(s.date.toLocal()).inSeconds;
-        // Only keep if it was created in the last 60 seconds (waiting for initial sync)
-        if (ageInSec < 60 && ageInSec > -60) {
-          finalSessions.add(s);
-          debugPrint('SessionsNotifier: Carrying over new local session: ${s.category}');
+        // Keep unsynced local sessions that are very recent (< 5 minutes)
+        if (ageInSec < 300 && ageInSec > -300) {
+          normalizedMap[stableId] = s.copyWith(id: stableId);
+          debugPrint('SessionsNotifier: Carrying over fresh local session: $stableId');
         }
       }
     }
 
+    final List<TimeSession> finalSessions = normalizedMap.values.toList();
     finalSessions.sort((a, b) => b.date.compareTo(a.date));
+    
+    // Update state and save
     state = finalSessions;
     _saveLocally(state);
+    
+    // 3. Cloud Cleanup pass - 嚴格 AWAIT 防止背景程序重疊
+    if (finalSessions.length < cloudSessions.length || zombieIds.isNotEmpty) {
+      debugPrint('SessionsNotifier: Incremental sync cleanup triggered!');
+      final firestore = ref.read(firestoreServiceProvider);
+      if (firestore != null) {
+        if (zombieIds.isNotEmpty) {
+          await firestore.batchDeleteSessionsByIds(zombieIds);
+        }
+        await firestore.batchUploadSessions(finalSessions);
+      }
+    }
   }
 
   Future<int> importSessions(List<TimeSession> newSessions) async {
@@ -156,10 +255,11 @@ class SessionsNotifier extends Notifier<List<TimeSession>> {
   }
 
   void addSession(TimeSession session) async {
-    state = [session, ...state];
+    final stableSession = session.copyWith(id: session.id); // Ensure ID is generated by model logic
+    state = [stableSession, ...state];
     _saveLocally(state);
     final firestore = ref.read(firestoreServiceProvider);
-    if (firestore != null) await firestore.addSession(session);
+    if (firestore != null) await firestore.addSession(stableSession);
   }
 
   void renameCategory(String oldCat, String newCat) async {
@@ -201,6 +301,10 @@ class SessionsNotifier extends Notifier<List<TimeSession>> {
       }
     }
     return '未登入雲端服務';
+  }
+
+  Future<void> syncNow() async {
+    await _pushAllToCloud();
   }
 
   Future<String?> handleInitialSync() async {

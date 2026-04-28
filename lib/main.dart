@@ -2,39 +2,29 @@ import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, Tar
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'firebase_options.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'services/update_service.dart';
 import 'services/background_timer_service.dart';
+import 'services/notification_service.dart';
 import 'services/storage_service.dart';
 import 'providers/layout_provider.dart';
 import 'providers/theme_provider.dart';
 import 'firebase_options.dart';
 import 'pages/main_screen.dart';
 import 'widgets/background_wrapper.dart';
+import 'widgets/app_lifecycle_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:shorebird_code_push/shorebird_code_push.dart' as shorebird_sdk;
 
 // Main Entry Point
 // ==========================================
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  
-  // Initialize Shorebird separately using named sdk to avoid constructor ambiguity
-  final shorebird = shorebird_sdk.ShorebirdUpdater();
-  
-  // Check for updates automatically on startup if supported
-  if (!kIsWeb && shorebird.isAvailable) {
-    shorebird.readCurrentPatch().then((patch) {
-      if (patch != null) {
-        debugPrint('Elite Tracker Current Shorebird Patch: ${patch.number}');
-      } else {
-        debugPrint('Elite Tracker: No patch installed yet.');
-      }
-    });
-  }
-  
+  WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  // 保留原生啟動圖，直到我們手動移除
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+
+  // Initialize App
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -47,19 +37,26 @@ void main() async {
   
   if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
     await initializeService();
+    await NotificationService.init();
   }
+
+  // 強制延遲 2 秒，確保資源與字體完全讀取，避免「叉叉」圖示出現
+  await Future.delayed(const Duration(seconds: 2));
   
   runApp(
     ProviderScope(
       overrides: [
-        storageServiceProvider.overrideWithValue(StorageService(prefs)),
+        sharedPreferencesProvider.overrideWithValue(prefs),
       ],
       child: const TimeTrackerApp(),
     ),
   );
 
+  // 移除原生啟動圖，開始 Flutter 層級的漸淡動畫
+  FlutterNativeSplash.remove();
+
   // Passive initial update check
-  Future.delayed(const Duration(seconds: 3), () {
+  Future.delayed(const Duration(seconds: 1), () {
     final container = ProviderScope.containerOf(WidgetsBinding.instance.rootElement!);
     container.read(updateProvider.notifier).checkUpdates();
   });
@@ -119,7 +116,72 @@ class TimeTrackerApp extends ConsumerWidget {
           iconTheme: WidgetStateProperty.all(const IconThemeData(size: 28)),
         ),
       ),
-      home: const BackgroundWrapper(child: MainScreen()),
+      home: const SplashFadeWrapper(
+        child: AppLifecycleManager(
+          child: BackgroundWrapper(
+            child: MainScreen(),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 漸影啟動包裝器
+/// 提供從啟動圖到主介面的平滑過度
+class SplashFadeWrapper extends StatefulWidget {
+  final Widget child;
+  const SplashFadeWrapper({super.key, required this.child});
+
+  @override
+  State<SplashFadeWrapper> createState() => _SplashFadeWrapperState();
+}
+
+class _SplashFadeWrapperState extends State<SplashFadeWrapper> {
+  bool _visible = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // 當組件掛載後，立即開始淡出動畫
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          setState(() => _visible = false);
+        }
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        // 主應用內容
+        widget.child,
+        
+        // 浮動在上面的淡出層（模擬啟動圖）
+        if (_visible || true) // 保留組件直到透明度變為 0
+        IgnorePointer(
+          ignoring: !_visible,
+          child: AnimatedOpacity(
+            opacity: _visible ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 800),
+            curve: Curves.easeInOut,
+            onEnd: () => setState(() => _visible = false),
+            child: Container(
+              color: const Color(0xFF1A237E), // 與原生啟動色一致的深錠藍
+              child: Center(
+                child: Image.asset(
+                  'assets/icon/app_icon.png',
+                  width: 256, // 放大顯示，具備高級感
+                  height: 256,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
