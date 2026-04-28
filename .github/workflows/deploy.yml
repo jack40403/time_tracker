@@ -13,6 +13,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -23,8 +29,26 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Build APK
+        run: flutter build apk --release
+
       - name: Build web
-        run: flutter build web --release
+        run: flutter build web --release --pwa-strategy=none
+
+      - name: Copy APK into web build
+        run: cp build/app/outputs/flutter-apk/app-release.apk build/web/app-release.apk
+
+      - name: Generate version.json
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d '\r')
+          TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+          cat > build/web/version.json <<EOF
+          {
+            "version": "$VERSION",
+            "timestamp": "$TIMESTAMP",
+            "url": "https://metimegoalgoal.web.app/app-release.apk"
+          }
+          EOF
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
