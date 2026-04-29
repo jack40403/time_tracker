@@ -167,8 +167,7 @@ void onStart(ServiceInstance service) async {
       HomeWidget.saveWidgetData<String>('task_name', cat);
       HomeWidget.saveWidgetData<String>('timer_text', timeStr);
       HomeWidget.updateWidget(
-        name: 'MasterWidgetProvider',
-        androidName: 'com.example.time_tracker.MasterWidgetProvider',
+        qualifiedAndroidName: 'com.example.time_tracker.MasterWidgetProvider',
       );
     } catch (e) {
       debugPrint('BackgroundService: Widget update failed: $e');

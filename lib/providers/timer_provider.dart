@@ -282,8 +282,7 @@ class TimerNotifier extends Notifier<TimerState> {
       HomeWidget.saveWidgetData<String>('task_name', state.category);
       HomeWidget.saveWidgetData<String>('timer_text', _formatTime(state.currentElapsed));
       HomeWidget.updateWidget(
-        name: 'MasterWidgetProvider',
-        androidName: 'com.example.time_tracker.MasterWidgetProvider',
+        qualifiedAndroidName: 'com.example.time_tracker.MasterWidgetProvider',
       );
     } catch (e) {
       debugPrint('Widget sync failed: $e');
