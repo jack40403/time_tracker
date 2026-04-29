@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/goal.dart';
 import '../providers/goal_provider.dart';
+import '../theme/cartoon_theme.dart';
 import '../providers/task_goal_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/goal_order_provider.dart';
@@ -609,12 +610,9 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title: Text('專注目標', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+      appBar: CartoonAppBar(
+        title: '專注目標 🎯',
         actions: [
-          // 強制同步按鈕
           IconButton(
             onPressed: _forceSync,
             icon: const Icon(Icons.cloud_sync_outlined),

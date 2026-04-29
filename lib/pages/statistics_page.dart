@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
+import '../theme/cartoon_theme.dart';
 import '../models/time_session.dart';
 import '../providers/session_provider.dart';
 import '../providers/category_provider.dart';
@@ -78,11 +79,7 @@ class StatisticsPage extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title: Text('統計', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
+      appBar: const CartoonAppBar(title: '統計 📊'),
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onHorizontalDragEnd: (details) {
@@ -104,7 +101,7 @@ class StatisticsPage extends ConsumerWidget {
             // Filter Chips
             Center(
               child: Container(
-                decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface, borderRadius: BorderRadius.circular(16)),
+                decoration: CartoonTheme.panelDecoration(radius: 16),
                 padding: const EdgeInsets.all(4),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,

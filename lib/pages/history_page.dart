@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/goal.dart';
 import '../models/time_session.dart';
+import '../theme/cartoon_theme.dart';
 import '../providers/session_provider.dart';
 import '../providers/goal_provider.dart';
 import '../providers/task_goal_provider.dart';
@@ -267,10 +268,8 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     final sortedDates = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('歷史紀錄', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+      appBar: CartoonAppBar(
+        title: '歷史紀錄 📅',
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 8.0, top: 8.0, bottom: 8.0),

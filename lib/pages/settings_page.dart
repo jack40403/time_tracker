@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../theme/cartoon_theme.dart';
 import 'package:vibration/vibration.dart';
 import '../services/update_service.dart';
 import '../providers/theme_provider.dart';
@@ -355,11 +356,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title: Text('設定', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
+      appBar: const CartoonAppBar(title: '設定 ⚙️'),
       body: ListView(
         children: [
             const Padding(

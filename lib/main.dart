@@ -95,25 +95,98 @@ class TimeTrackerApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       themeMode: themeMode,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6C63FF)),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF0077B6),
+          primary: const Color(0xFF0077B6),
+          secondary: const Color(0xFFFFD60A),
+          surface: const Color(0xFFFFFDE7),
+        ),
         useMaterial3: true,
         textTheme: enlarge(baseLightTextTheme),
+        cardTheme: CardThemeData(
+          color: const Color(0xFFFFFDE7),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: Color(0xFF1A1A2E), width: 3),
+          ),
+          elevation: 0,
+          margin: const EdgeInsets.all(8),
+        ),
+        chipTheme: ChipThemeData(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: Color(0xFF1A1A2E), width: 2),
+          ),
+          backgroundColor: Colors.white,
+          selectedColor: const Color(0xFFFFD60A),
+          labelStyle: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E)),
+        ),
         navigationBarTheme: NavigationBarThemeData(
-          labelTextStyle: WidgetStateProperty.all(const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-          iconTheme: WidgetStateProperty.all(const IconThemeData(size: 28)),
+          backgroundColor: const Color(0xFFFFFDE7),
+          indicatorColor: const Color(0xFFFFD60A),
+          labelTextStyle: WidgetStateProperty.all(
+            const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E)),
+          ),
+          iconTheme: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return const IconThemeData(size: 26, color: Color(0xFF1A1A2E));
+            }
+            return const IconThemeData(size: 26, color: Color(0xFF0077B6));
+          }),
+          elevation: 0,
+        ),
+        dialogTheme: DialogThemeData(
+          backgroundColor: const Color(0xFFFFFDE7),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+            side: const BorderSide(color: Color(0xFF1A1A2E), width: 3),
+          ),
+          elevation: 0,
+        ),
+        snackBarTheme: SnackBarThemeData(
+          backgroundColor: const Color(0xFF1A1A2E),
+          contentTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          behavior: SnackBarBehavior.floating,
         ),
       ),
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6C63FF),
+          seedColor: const Color(0xFF0077B6),
           brightness: Brightness.dark,
-          surface: const Color(0xFF121212),
+          surface: const Color(0xFF1A1A2E),
         ),
         useMaterial3: true,
         textTheme: enlarge(baseDarkTextTheme),
+        cardTheme: CardThemeData(
+          color: const Color(0xFF0D2137),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: Color(0xFF48CAE4), width: 2.5),
+          ),
+          elevation: 0,
+        ),
         navigationBarTheme: NavigationBarThemeData(
-          labelTextStyle: WidgetStateProperty.all(const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-          iconTheme: WidgetStateProperty.all(const IconThemeData(size: 28)),
+          backgroundColor: const Color(0xFF1A1A2E),
+          indicatorColor: const Color(0xFFFFD60A),
+          labelTextStyle: WidgetStateProperty.all(
+            const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+          ),
+          iconTheme: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return const IconThemeData(size: 26, color: Color(0xFF1A1A2E));
+            }
+            return const IconThemeData(size: 26, color: Color(0xFF48CAE4));
+          }),
+          elevation: 0,
+        ),
+        dialogTheme: DialogThemeData(
+          backgroundColor: const Color(0xFF0D2137),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+            side: const BorderSide(color: Color(0xFF48CAE4), width: 2.5),
+          ),
+          elevation: 0,
         ),
       ),
       home: const SplashFadeWrapper(
