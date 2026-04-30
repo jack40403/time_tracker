@@ -155,7 +155,7 @@ class CartoonAppBar extends StatelessWidget implements PreferredSizeWidget {
           fontFamily: 'Fredoka',
           fontSize: 22,
           fontWeight: FontWeight.w700,
-          color: isDark ? Colors.white : inkBlack,
+          color: isDark ? Colors.white : CartoonTheme.inkBlack,
           letterSpacing: 1,
         ),
       ),
