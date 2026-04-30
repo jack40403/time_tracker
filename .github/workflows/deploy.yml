@@ -42,13 +42,17 @@ jobs:
 
       - name: Generate version.json
         run: |
-          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d '\r')
+          FULL_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d '\r')
+          VERSION_NAME=$(echo "$FULL_VERSION" | cut -d'+' -f1)
+          BUILD_NUMBER=$(echo "$FULL_VERSION" | cut -d'+' -f2)
           TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
           cat > build/web/version.json <<EOF
           {
-            "version": "$VERSION",
-            "timestamp": "$TIMESTAMP",
-            "url": "https://metimegoalgoal.web.app/app-release.apk"
+            "version": "$VERSION_NAME",
+            "buildNumber": "$BUILD_NUMBER",
+            "url": "https://metimegoalgoal.web.app/app-release.apk",
+            "changelog": "v$VERSION_NAME (Build $BUILD_NUMBER): 最新版本更新",
+            "timestamp": "$TIMESTAMP"
           }
           EOF
 
