@@ -32,7 +32,7 @@
     ],
     "rewrites": [
       {
-        "source": "!/app-release.apk",
+        "source": "!/**/*.apk",
         "destination": "/index.html"
       }
     ],
@@ -47,7 +47,7 @@
         ]
       },
       {
-        "source": "/app-release.apk",
+        "source": "/**/*.apk",
         "headers": [
           {
             "key": "Cache-Control",

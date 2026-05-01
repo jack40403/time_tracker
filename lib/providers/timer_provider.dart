@@ -163,9 +163,23 @@ class TimerNotifier extends Notifier<TimerState> {
     if (localJson != null) {
       final local = TimerState.fromJson(localJson);
       if (local.isRunning) {
-        Future.microtask(() => _startTicker());
-        // ZOMBIE RECOVERY: Ensure service is actually running if state says so
-        Future.microtask(() => _restartServiceIfNeeded());
+        // ZOMBIE RECOVERY AGE CHECK: If the start time is too old (e.g. > 12 hours),
+        // it's likely a zombie state from a crash. Don't auto-restart.
+        bool isTooOld = false;
+        if (local.startTime != null) {
+          final age = DateTime.now().toUtc().difference(local.startTime!).inHours;
+          if (age > 12) isTooOld = true;
+        }
+
+        if (!isTooOld) {
+          Future.microtask(() => _startTicker());
+          // ZOMBIE RECOVERY: Ensure service is actually running if state says so
+          Future.microtask(() => _restartServiceIfNeeded());
+        } else {
+          debugPrint('TimerNotifier: Detected very old zombie state (>12h). Not restarting.');
+          // Reset state to avoid repeated detection
+          Future.microtask(() => resetTimer());
+        }
       }
       
       // Ensure initial widget sync

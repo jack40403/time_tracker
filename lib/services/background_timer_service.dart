@@ -98,6 +98,9 @@ void onStart(ServiceInstance service) async {
 
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
+  int pausedSeconds = 0;
+  const int autoStopTimeout = 30 * 60; // 30 minutes
+
   // Define functions FIRST to avoid declaration order issues
   void updateNotification(int current, String cat, bool running) {
     if (service is AndroidServiceInstance) {
@@ -121,7 +124,7 @@ void onStart(ServiceInstance service) async {
               notificationChannelId,
               'Elite Timer Service',
               channelDescription: 'Ongoing timer notification',
-              ongoing: true,
+              ongoing: running, // DYNAMIC: Only ongoing when running
               icon: '@mipmap/ic_launcher', 
               importance: Importance.low,
               priority: Priority.low,
@@ -176,6 +179,7 @@ void onStart(ServiceInstance service) async {
 
   void setRunning(bool running) {
     isRunning = running;
+    if (isRunning) pausedSeconds = 0; // Reset pause timer
     updateNotification(currentSeconds, category, isRunning);
     service.invoke('statusChange', {
       'isRunning': isRunning,
@@ -205,6 +209,7 @@ void onStart(ServiceInstance service) async {
 
     if (isRunning) {
       currentSeconds++;
+      pausedSeconds = 0;
       updateNotification(currentSeconds, category, isRunning);
       updateWidget(currentSeconds, category);
       service.invoke('update', {
@@ -212,6 +217,13 @@ void onStart(ServiceInstance service) async {
         'category': category,
       });
     } else {
+      pausedSeconds++;
+      // AUTO-STOP: If paused for too long, kill the service to avoid "ghost" status bar
+      if (pausedSeconds >= autoStopTimeout) {
+        debugPrint('BackgroundService: Paused timeout reached. Stopping service...');
+        service.stopSelf();
+        return;
+      }
       updateNotification(currentSeconds, category, isRunning);
       updateWidget(currentSeconds, category);
     }

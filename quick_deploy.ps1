@@ -33,26 +33,27 @@ if (Test-Path $iconPath) {
     Write-Host "✅ Icons synced to build folder." -ForegroundColor Green
 }
 
-# 2. 確保 APK 絕對正確 (從 build/app 拷貝到 build/web)
+# 2. 確保 APK 絕對正確
 $apkPath = "build/app/outputs/flutter-apk/app-release.apk"
+$versionedApkName = "app-v$($versionName.Replace('.', '_'))-$buildNumber.apk"
 if (Test-Path $apkPath) {
+    Copy-Item $apkPath "build/web/$versionedApkName" -Force
     Copy-Item $apkPath "build/web/app-release.apk" -Force
-    Write-Host "✅ APK synced to build folder." -ForegroundColor Green
+    Write-Host "?? APK synced as $versionedApkName" -ForegroundColor Green
 }
 
 # 3. 生成正確的 version.json (加入時間戳防止快取)
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-$versionJson = @"
-{
-  "version": "$versionName",
-  "buildNumber": "$buildNumber",
-  "url": "https://metimegoalgoal.web.app/app-release.apk",
-  "changelog": "v$versionName (Build $buildNumber): 新增「專注之環」桌面小組件與通知欄即時控制按鈕。",
-  "timestamp": "$timestamp"
+$jsonObj = @{
+  version = $versionName
+  buildNumber = $buildNumber.ToString()
+  url = "https://metimegoalgoal.web.app/$versionedApkName"
+  changelog = "v$versionName (Build $buildNumber): Updated background service and notification behavior."
+  timestamp = $timestamp
 }
-"@
-$versionJson | Out-File "build/web/version.json" -Encoding ASCII
-Write-Host "✅ version.json generated: v$versionName+$buildNumber" -ForegroundColor Green
+$versionJson = $jsonObj | ConvertTo-Json
+[System.IO.File]::WriteAllText("build/web/version.json", $versionJson, (New-Object System.Text.UTF8Encoding($false)))
+Write-Host "version.json generated: v$versionName+$buildNumber" -ForegroundColor Green
 
 Write-Host "--- FINISHING: Deploying to Firebase ---" -ForegroundColor Cyan
 firebase.cmd deploy --only hosting
