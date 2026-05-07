@@ -44,7 +44,7 @@ git push → GitHub Actions 自動執行：
 - Widget 更新用 `qualifiedAndroidName`，不用 `androidName`
 
 ## 目前版本
-`1.1.0+49`（pubspec.yaml）
+`1.1.0+85`（pubspec.yaml）
 
 ---
 *兩個 Claude session 共用此檔案，請在做重大變更前先讀這裡。*
