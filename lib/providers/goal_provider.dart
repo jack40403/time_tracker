@@ -205,6 +205,20 @@ class GoalNotifier extends Notifier<List<Goal>> {
     _syncWithCloud(remoteGoals);
   }
 
+  Future<void> forceSyncFromCloud() async {
+    final firestore = ref.read(firestoreServiceProvider);
+    if (firestore == null) return;
+    try {
+      final data = await firestore.fetchGoalsOnce();
+      if (data.isNotEmpty) {
+        final remote = data.map((e) => Goal.fromJson(e)).toList();
+        forceMergeFromCloud(remote);
+      }
+    } catch (e) {
+      debugPrint('GoalNotifier: Force sync failed: $e');
+    }
+  }
+
   void deleteGoal(String id) {
     final goal = state.firstWhere((g) => g.id == id, orElse: () => Goal(id: id, title: '', category: '', targetSeconds: 0, period: GoalPeriod.daily, createdAt: DateTime.now(), startDate: DateTime.now()));
     _addTombstones([id]);

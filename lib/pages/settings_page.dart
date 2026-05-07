@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -516,59 +517,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                                 }
                               } catch (e) {
                                 if (mounted) {
+                                  String errorMsg = e.toString();
+                                  if (errorMsg.contains('unavailable') || errorMsg.contains('deadline')) {
+                                    errorMsg = '網路訊號不穩定，請移動到收訊較好的地方再試一次 (或是檢查網路連接)';
+                                  }
                                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                    content: Text('❌ 同步失敗: $e'), 
+                                    content: Text('❌ 同步失敗: $errorMsg'), 
                                     backgroundColor: Colors.red, 
                                     behavior: SnackBarBehavior.floating,
-                                    duration: const Duration(milliseconds: 1500),
+                                    duration: const Duration(seconds: 4),
                                   ));
                                 }
                               }
                             },
                             icon: const Icon(Icons.sync, size: 18),
                             label: const Text('手動強制同步'),
-                          ),
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: () async {
-                                final confirm = await showDialog<bool>(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: const Text('原子級雲端修復'),
-                                    content: const Text('此操作將執行深層去重清理：\n1. 從雲端下載所有紀錄\n2. 自動移除重複與格式錯誤的數據\n3. 重置雲端並重新上傳乾淨的副本\n\n適用於解決「數據翻倍」或「同步錯亂」問題。'),
-                                    actions: [
-                                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-                                      ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white), child: const Text('開始修復')),
-                                    ],
-                                  ),
-                                );
-
-                                if (confirm == true) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('🚀 啟動原子級修復程式... 請勿關閉 App'), duration: Duration(seconds: 5))
-                                  );
-                                  final duplicateCount = await ref.read(sessionsProvider.notifier).forceCloudCleanup();
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('✨ 修復完成！已自動清理 $duplicateCount 筆重複或無效紀錄。'),
-                                        backgroundColor: Colors.green,
-                                        duration: const Duration(seconds: 4),
-                                      )
-                                    );
-                                  }
-                                }
-                              },
-                              icon: const Icon(Icons.auto_fix_high_rounded, size: 18),
-                              label: const Text('原子級去重修復 (解決翻倍問題)'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue.withOpacity(0.8),
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                              ),
-                            ),
                           ),
                         ],
                       ),
@@ -1056,23 +1019,139 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 title: Text('進階系統工具與危險區域', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.indigo)),
                 subtitle: const Text('包含雲端清理、調試工具與重置選項', style: TextStyle(fontSize: 12)),
                 children: [
-                  // --- 1. 雲端維護 ---
+                  // --- 1. 雲端維護與救援 ---
                   ListTile(
                     leading: const Icon(Icons.cleaning_services_rounded, color: Colors.blue),
-                    title: const Text('雲端數據深層去重', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                    subtitle: const Text('掃除重複的舊格式紀錄並優化雲端空間', style: TextStyle(fontSize: 11)),
+                    title: const Text('雲端數據原子級去重', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    subtitle: const Text('掃除重複紀錄並優化雲端空間 (解決數據翻倍問題)', style: TextStyle(fontSize: 11)),
                     onTap: () async {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('🧹 正在進行雲端深層大掃除...'), duration: Duration(seconds: 1))
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('原子級雲端修復'),
+                          content: const Text('此操作將執行深層去重清理：\n1. 從雲端下載所有紀錄\n2. 自動移除重複與格式錯誤的數據\n3. 重置雲端並重新上傳乾淨的副本\n\n適用於解決「數據翻倍」或「同步錯亂」問題。'),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+                            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white), child: const Text('開始修復')),
+                          ],
+                        ),
                       );
-                      final count = await ref.read(sessionsProvider.notifier).forceCloudCleanup();
-                      if (mounted) {
+
+                      if (confirm == true) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('✅ 清理完成！已從雲端移除 $count 筆冗餘紀錄'),
-                            backgroundColor: Colors.green.withValues(alpha: 0.8),
-                          )
+                          const SnackBar(content: Text('🚀 啟動原子級修復程式... 請勿關閉 App'), duration: Duration(seconds: 5))
                         );
+                        final count = await ref.read(sessionsProvider.notifier).forceCloudCleanup();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('✅ 清理完成！已從雲端移除 $count 筆冗餘紀錄'),
+                              backgroundColor: Colors.green,
+                            )
+                          );
+                        }
+                      }
+                    },
+                  ),
+                  const Divider(height: 1, indent: 50),
+                  ListTile(
+                    leading: const Icon(Icons.medical_services_rounded, color: Colors.red),
+                    title: const Text('全方位數據救援診斷', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    subtitle: const Text('深度掃描所有可能的雲端路徑以救回遺失資料', style: TextStyle(fontSize: 11)),
+                    onTap: () async {
+                      final firestore = ref.read(firestoreServiceProvider);
+                      if (firestore == null) return;
+                      
+                      showDialog(context: context, barrierDismissible: false, builder: (ctx) => const Center(child: CircularProgressIndicator()));
+
+                      try {
+                        final uid = firestore.userId;
+                        final results = <String, dynamic>{};
+                        final db = FirebaseFirestore.instance;
+                        
+                        final List<Map<String, String>> scanTasks = [
+                          {'label': 'users/{uid}/sessions', 'path': 'users/$uid/sessions'},
+                          {'label': 'user/{uid}/sessions', 'path': 'user/$uid/sessions'},
+                          {'label': 'sessions/{uid}', 'path': 'sessions/$uid'},
+                          {'label': 'users_v2/{uid}/sessions', 'path': 'users_v2/$uid/sessions'},
+                        ];
+                        
+                        for (var task in scanTasks) {
+                          final label = task['label']!;
+                          final path = task['path']!;
+                          try {
+                            final parts = path.split('/');
+                            if (parts.length == 2) {
+                              final snap = await db.collection(parts[0]).where('userId', isEqualTo: uid).get(GetOptions(source: Source.server));
+                              results[label] = snap.docs.length;
+                            } else {
+                              final snap = await db.collection(parts[0]).doc(parts[1]).collection(parts[2]).get(GetOptions(source: Source.server));
+                              results[label] = snap.docs.length;
+                            }
+                          } catch (e) {
+                            results[label] = -2;
+                          }
+                        }
+
+                        if (mounted) Navigator.pop(context);
+
+                        if (mounted) {
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('數據救援診斷報告'),
+                              content: SizedBox(
+                                width: double.maxFinite,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: scanTasks.map((t) {
+                                    final label = t['label']!;
+                                    final count = results[label];
+                                    return ListTile(
+                                      title: Text(label, style: const TextStyle(fontSize: 10)),
+                                      trailing: Text(count == -2 ? '❌' : '$count 筆'),
+                                      dense: true,
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+                              actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('關閉'))],
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (mounted) Navigator.pop(context);
+                      }
+                    },
+                  ),
+                  const Divider(height: 1, indent: 50),
+                  ListTile(
+                    leading: const Icon(Icons.security_rounded, color: Colors.blueGrey),
+                    title: const Text('測試雲端寫入權限', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    subtitle: const Text('檢查當前帳號是否有權限寫入 Firestore', style: TextStyle(fontSize: 11)),
+                    onTap: () async {
+                      final firestore = ref.read(firestoreServiceProvider);
+                      if (firestore == null) return;
+                      final uid = firestore.userId;
+                      final db = FirebaseFirestore.instance;
+                      try {
+                        await db.collection('users').doc(uid).collection('test_permission').doc('test').set({
+                          'timestamp': FieldValue.serverTimestamp(),
+                        });
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 寫入權限測試成功！'), backgroundColor: Colors.green));
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('寫入權限失敗'),
+                              content: Text('錯誤訊息: $e'),
+                              actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('確定'))],
+                            ),
+                          );
+                        }
                       }
                     },
                   ),

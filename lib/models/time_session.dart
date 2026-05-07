@@ -1,4 +1,5 @@
 import 'package:uuid/uuid.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class TimeSession {
   final String id;
@@ -60,7 +61,10 @@ class TimeSession {
   factory TimeSession.fromJson(Map<String, dynamic> json) {
     final rawDate = json['date'];
     DateTime parsedDate;
-    if (rawDate is int) {
+    
+    if (rawDate is Timestamp) {
+      parsedDate = rawDate.toDate().toLocal();
+    } else if (rawDate is int) {
       parsedDate = DateTime.fromMillisecondsSinceEpoch(rawDate).toLocal();
     } else if (rawDate is String) {
       parsedDate = DateTime.parse(rawDate).toLocal();

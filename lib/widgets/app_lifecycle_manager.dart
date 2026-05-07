@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/session_provider.dart';
+import '../providers/goal_provider.dart';
 import '../providers/task_goal_provider.dart';
 import '../providers/timer_provider.dart';
 
@@ -37,8 +38,15 @@ class _AppLifecycleManagerState extends ConsumerState<AppLifecycleManager> with 
       // 觸發任務型目標同步
       ref.read(taskGoalProvider.notifier).syncNow();
     } else if (state == AppLifecycleState.resumed) {
-      debugPrint('AppLifecycleManager: App resumed, fetching absolute truth from background...');
+      debugPrint('AppLifecycleManager: App resumed, fetching absolute truth from cloud & background...');
+      
+      // 1. 同步背景服務狀態
       ref.read(timerProvider.notifier).requestBackgroundSync();
+      
+      // 2. 主動從雲端拉取最新數據 (繞過本地快取)
+      ref.read(sessionsProvider.notifier).forceSyncFromCloud();
+      ref.read(goalProvider.notifier).forceSyncFromCloud();
+      ref.read(taskGoalProvider.notifier).forceSyncFromCloud();
     }
   }
 

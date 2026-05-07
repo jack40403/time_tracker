@@ -158,6 +158,14 @@ class TimerNotifier extends Notifier<TimerState> {
           }
         });
       });
+
+      // 關鍵修復：主動讀取雲端初始值，避免 listen 錯過已存在的快照
+      Future.microtask(() {
+        final current = ref.read(cloudTimerProvider);
+        if (current.hasValue && current.value != null) {
+          _syncFromRemote(TimerState.fromJson(current.value!));
+        }
+      });
     }
 
     if (localJson != null) {
@@ -194,7 +202,6 @@ class TimerNotifier extends Notifier<TimerState> {
           final int remoteSeconds = event['currentElapsed'];
           
           if (remoteRunning != state.isRunning) {
-            _lastManualActionTime = DateTime.now(); // Prevent cloud bounce overwrite!
             if (remoteRunning) {
               state = state.copyWith(
                 isRunning: true, 

@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/time_session.dart';
@@ -51,6 +52,7 @@ class SessionsNotifier extends Notifier<List<TimeSession>> {
       }
     } catch (e) {
       debugPrint('SessionsNotifier: Force sync failed: $e');
+      rethrow;
     }
   }
 
@@ -103,6 +105,14 @@ class SessionsNotifier extends Notifier<List<TimeSession>> {
   }
 
   Future<void> _syncWithCloud(List<dynamic> cloudSessions) async {
+    // 安全檢查：如果雲端回傳空數據，但本地有數據，且可能是網路不穩或快取問題
+    if (cloudSessions.isEmpty && state.isNotEmpty) {
+      debugPrint('SessionsNotifier: Cloud data empty but local exists. Avoiding wipe.');
+      // 嘗試將本地數據推上去補齊，而不是直接抹除本地
+      _pushAllToCloud();
+      return;
+    }
+
     // If cloud has data, it is the ABSOLUTE source of truth.
     // We synchronize and deduplicate based on Fuzzy IDs (BaseName + Timestamp)
     
@@ -161,8 +171,8 @@ class SessionsNotifier extends Notifier<List<TimeSession>> {
       
       if (!normalizedMap.containsKey(stableId)) {
         final ageInSec = now.difference(s.date.toLocal()).inSeconds;
-        // Keep unsynced local sessions that are very recent (< 5 minutes)
-        if (ageInSec < 300 && ageInSec > -300) {
+        // 安全緩衝：保留尚未上傳的本地紀錄 (增加到 48 小時，避免弱網環境下數據被沖掉)
+        if (ageInSec < 172800 && ageInSec > -172800) {
           normalizedMap[stableId] = s.copyWith(id: stableId);
           debugPrint('SessionsNotifier: Carrying over fresh local session: $stableId');
         }
@@ -187,6 +197,7 @@ class SessionsNotifier extends Notifier<List<TimeSession>> {
         await firestore.batchUploadSessions(finalSessions);
       }
     }
+    debugPrint('SessionsNotifier: Sync complete.');
   }
 
   Future<int> importSessions(List<TimeSession> newSessions) async {
