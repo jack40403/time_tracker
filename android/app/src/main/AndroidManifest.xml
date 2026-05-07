@@ -44,6 +44,10 @@
             android:foregroundServiceType="specialUse"
             android:stopWithTask="false" />
 
+        <!-- Timer notification action buttons receiver -->
+        <receiver android:name="com.example.time_tracker.TimerActionReceiver"
+            android:exported="false" />
+
         <!-- Master of Time Widget Provider -->
         <receiver android:name="com.example.time_tracker.MasterWidgetProvider" android:exported="true">
             <intent-filter>
