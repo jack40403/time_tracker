@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -38,6 +40,26 @@ void main() async {
   if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
     await initializeService();
     await NotificationService.init();
+  }
+
+  // Listen for notification update events from background service and relay to Kotlin.
+  // Kotlin (TimerNotificationManager) shows the notification with native PendingIntents
+  // so action buttons reliably reach TimerActionReceiver.
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    const _timerNotifChannel = MethodChannel('timer_notification_channel');
+    FlutterBackgroundService().on('updateNotification').listen((data) async {
+      if (data != null) {
+        try {
+          await _timerNotifChannel.invokeMethod('show', {
+            'title': data['title'],
+            'content': data['content'],
+            'isRunning': data['isRunning'],
+          });
+        } catch (e) {
+          debugPrint('TimerNotification relay failed: $e');
+        }
+      }
+    });
   }
 
   // 強制延遲 2 秒，確保資源與字體完全讀取，避免「叉叉」圖示出現

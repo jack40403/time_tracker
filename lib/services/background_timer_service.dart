@@ -96,8 +96,6 @@ void onStart(ServiceInstance service) async {
     }
   }
 
-  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-
   int pausedSeconds = 0;
   const int autoStopTimeout = 30 * 60; // 30 minutes
 
@@ -108,53 +106,20 @@ void onStart(ServiceInstance service) async {
       final minutes = (current % 3600) ~/ 60;
       final seconds = current % 60;
       final timeStr = '${hours > 0 ? '$hours:' : ''}${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+      final title = running ? '正在計時: $cat' : '計時已暫停: $cat';
+      final content = '累計時間: $timeStr';
 
-      service.setForegroundNotificationInfo(
-        title: running ? '正在計時: $cat' : '計時已暫停: $cat',
-        content: '累計時間: $timeStr',
-      );
+      // Fallback: always update the foreground service notification (no action buttons,
+      // but guaranteed to work even when the main app is killed).
+      service.setForegroundNotificationInfo(title: title, content: content);
 
-      try {
-        flutterLocalNotificationsPlugin.show(
-          notificationId,
-          running ? '正在計時: $cat' : '計時已暫停: $cat',
-          '累計時間: $timeStr',
-          NotificationDetails(
-            android: AndroidNotificationDetails(
-              notificationChannelId,
-              'Elite Timer Service',
-              channelDescription: 'Ongoing timer notification',
-              ongoing: running, // DYNAMIC: Only ongoing when running
-              icon: '@mipmap/ic_launcher', 
-              importance: Importance.low,
-              priority: Priority.low,
-              showWhen: false, 
-              category: AndroidNotificationCategory.status,
-              visibility: NotificationVisibility.public,
-              usesChronometer: false,
-              enableVibration: false,
-              playSound: false,
-              onlyAlertOnce: true,
-              actions: [
-                AndroidNotificationAction(
-                  running ? 'pause' : 'resume',
-                  running ? '暫停' : '繼續',
-                  showsUserInterface: false,
-                  cancelNotification: false,
-                ),
-                const AndroidNotificationAction(
-                  'stop',
-                  '停止',
-                  showsUserInterface: false,
-                  cancelNotification: false,
-                ),
-              ],
-            ),
-          ),
-        );
-      } catch (e) {
-        // Fallback
-      }
+      // Relay to main app, which calls Kotlin TimerNotificationManager to show
+      // the notification with proper PendingIntent action buttons.
+      service.invoke('updateNotification', {
+        'title': title,
+        'content': content,
+        'isRunning': running,
+      });
     }
   }
 
@@ -191,6 +156,7 @@ void onStart(ServiceInstance service) async {
   // This timer handles BOTH counting and Atomic Prefs Bridge polling.
   Timer.periodic(const Duration(seconds: 1), (t) async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload(); // Force re-read from disk; cross-isolate writes are not visible otherwise.
     final pendingAction = prefs.getString('pending_timer_action');
     
     if (pendingAction != null) {
