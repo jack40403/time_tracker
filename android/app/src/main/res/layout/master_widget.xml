@@ -24,12 +24,13 @@
         android:layout_height="120dp"
         android:layout_centerInParent="true">
         
-        <!-- 背景圓環 (裝飾) -->
-        <View
+        <!-- 背景圓環 (使用 ImageView 代替不支援的 View) -->
+        <ImageView
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="@drawable/widget_circular_ring"
-            android:alpha="0.2" />
+            android:src="@drawable/widget_circular_ring"
+            android:alpha="0.2"
+            android:contentDescription="decorative ring" />
 
         <!-- 計時文字 -->
         <TextView
