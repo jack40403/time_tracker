@@ -235,36 +235,6 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 20),
-                // --- 提醒時間設定 ---
-                Row(
-                  children: [
-                    Text('開啟提醒', style: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade600)),
-                    const Spacer(),
-                    Switch(
-                      value: isReminderEnabled,
-                      onChanged: (v) => setS(() => isReminderEnabled = v),
-                    ),
-                  ],
-                ),
-                if (isReminderEnabled) ...[
-                  const SizedBox(height: 8),
-                  InkWell(
-                    onTap: () async {
-                      final picked = await showTimePicker(context: ctx, initialTime: selectedReminderTime);
-                      if (picked != null) setS(() => selectedReminderTime = picked);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                      decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(12)),
-                      child: Row(children: [
-                        const Icon(Icons.access_time, size: 18, color: Colors.blueGrey),
-                        const SizedBox(width: 12),
-                        Text('提醒時間: ${selectedReminderTime.format(context)}', style: GoogleFonts.outfit(fontSize: 16)),
-                      ]),
-                    ),
-                  ),
-                ],
                 const SizedBox(height: 28),
                 Row(children: [
                   Expanded(child: OutlinedButton(

@@ -417,6 +417,8 @@ class GoalNotifier extends Notifier<List<Goal>> {
     bool hasChanged = false;
 
     final newList = state.map((goal) {
+      if (goal.type != GoalType.time) return goal;
+
       final history = Map<String, int>.from(goal.completionHistory);
       final dailySeconds = sessions
           .where((s) => s.category == goal.category && s.date.toLocal().year == now.year && s.date.toLocal().month == now.month && s.date.toLocal().day == now.day)

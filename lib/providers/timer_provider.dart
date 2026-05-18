@@ -262,17 +262,9 @@ class TimerNotifier extends Notifier<TimerState> {
         
     if (shouldSync) {
       debugPrint('TimerNotifier: Syncing from Cloud...');
-      TimerState adjustedRemote = remote;
-      if (remote.isRunning && remote.startTime != null && remote.lastSyncTime != null) {
-        final offset = remote.lastSyncTime!.difference(DateTime.now().toUtc());
-        final adjustedStartTime = remote.startTime!.subtract(offset);
-        adjustedRemote = remote.copyWith(startTime: adjustedStartTime);
-        debugPrint('TimerNotifier: Syncing Clock Skew Offset: ${offset.inMilliseconds}ms');
-      }
-
       _isSyncingFromCloud = true;
-      state = adjustedRemote; 
-      if (adjustedRemote.isRunning) _startTicker(); else _timer?.cancel();
+      state = remote;
+      if (remote.isRunning) _startTicker(); else _timer?.cancel();
       _isSyncingFromCloud = false;
     }
   }
@@ -341,7 +333,7 @@ class TimerNotifier extends Notifier<TimerState> {
   void changeCategory(String newCategory) {
     if (state.category == newCategory) return;
     _timer?.cancel();
-    state = state.copyWith(isRunning: false, category: newCategory, startTime: null);
+    state = state.copyWith(isRunning: false, category: newCategory, startTime: null, baseSeconds: 0);
     _pushToCloud();
   }
 

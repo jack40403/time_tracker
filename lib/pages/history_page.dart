@@ -516,6 +516,8 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   void _showEditSessionDialog(TimeSession session) {
     final catColors = ref.read(categoryColorProvider);
     String selectedCategory = session.category;
+    DateTime selectedDate = DateTime(session.date.year, session.date.month, session.date.day);
+    TimeOfDay startTime = TimeOfDay(hour: session.date.hour, minute: session.date.minute);
     final hoursController = TextEditingController(text: (session.durationSeconds ~/ 3600).toString());
     final minutesController = TextEditingController(text: ((session.durationSeconds % 3600) ~/ 60).toString());
     final secondsController = TextEditingController(text: (session.durationSeconds % 60).toString());
@@ -531,6 +533,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // 分類
                 DropdownButtonFormField<String>(
                   value: selectedCategory,
                   decoration: const InputDecoration(labelText: '分類'),
@@ -538,16 +541,73 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                   onChanged: (v) => setModalState(() => selectedCategory = v!),
                 ),
                 const SizedBox(height: 20),
+
+                // 日期
+                const Text('日期', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 6),
+                InkWell(
+                  onTap: () async {
+                    final d = await showDatePicker(
+                      context: ctx,
+                      initialDate: selectedDate,
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime.now(),
+                    );
+                    if (d != null) setModalState(() => selectedDate = d);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade400),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
+                      const SizedBox(width: 10),
+                      Text('${selectedDate.year}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}', style: const TextStyle(fontSize: 16)),
+                    ]),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // 起始時間
+                const Text('起始時間', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 6),
+                InkWell(
+                  onTap: () async {
+                    final t = await showTimePicker(context: ctx, initialTime: startTime);
+                    if (t != null) setModalState(() => startTime = t);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade400),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.access_time_outlined, size: 16, color: Colors.grey),
+                      const SizedBox(width: 10),
+                      Text(startTime.format(ctx), style: const TextStyle(fontSize: 16)),
+                    ]),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // 時間長度
+                const Text('時間長度', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 6),
                 Row(
                   children: [
-                    Expanded(child: TextField(controller: hoursController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '時'))),
+                    Expanded(child: TextField(controller: hoursController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '時', border: OutlineInputBorder()))),
                     const SizedBox(width: 8),
-                    Expanded(child: TextField(controller: minutesController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '分'))),
+                    Expanded(child: TextField(controller: minutesController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '分', border: OutlineInputBorder()))),
                     const SizedBox(width: 8),
-                    Expanded(child: TextField(controller: secondsController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '秒'))),
+                    Expanded(child: TextField(controller: secondsController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '秒', border: OutlineInputBorder()))),
                   ],
                 ),
                 const SizedBox(height: 20),
+
+                // 備註
                 TextField(
                   controller: noteController,
                   maxLines: 4,
@@ -571,16 +631,20 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                 final m = int.tryParse(minutesController.text) ?? 0;
                 final s = int.tryParse(secondsController.text) ?? 0;
                 final newDuration = h * 3600 + m * 60 + s;
-                
                 if (newDuration <= 0) return;
 
-                final updated = session.copyWith(
+                final newDate = DateTime(
+                  selectedDate.year, selectedDate.month, selectedDate.day,
+                  startTime.hour, startTime.minute,
+                );
+                final updated = TimeSession(
                   category: selectedCategory,
                   durationSeconds: newDuration,
-                  note: noteController.text.trim(),
+                  date: newDate,
+                  note: noteController.text.trim().isEmpty ? null : noteController.text.trim(),
                 );
-                
-                ref.read(sessionsProvider.notifier).updateSession(updated);
+                ref.read(sessionsProvider.notifier).deleteSession(session);
+                ref.read(sessionsProvider.notifier).addSession(updated);
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('紀錄已更新')));
               },

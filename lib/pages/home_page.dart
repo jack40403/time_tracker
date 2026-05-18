@@ -425,7 +425,17 @@ class HomePage extends ConsumerWidget {
             builder: (context, scaleValue, child) => Transform.scale(
               scale: scaleValue,
               child: GestureDetector(
-                onTap: timerNotifier.toggleTimer,
+                onTap: () {
+                  if (!timerState.isRunning && timerState.category == '尚未選擇項目') {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('請先選擇一個項目再開始計時'),
+                      behavior: SnackBarBehavior.floating,
+                      duration: Duration(seconds: 2),
+                    ));
+                    return;
+                  }
+                  timerNotifier.toggleTimer();
+                },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 250),
                   width: 100, height: 100,

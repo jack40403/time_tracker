@@ -54,18 +54,20 @@ class _GoalProgressCardState extends ConsumerState<GoalProgressCard> {
         ? ref.watch(taskGoalProvider.notifier).getRemainingText(goal)
         : ref.watch(goalProvider.notifier).getRemainingText(goal);
 
-    // 計算今日該類別已儲存的秒數
+    // 計算今日該類別已儲存的秒數（僅時間型需要）
     final today = DateTime.now();
-    final int savedTodaySeconds = ref.watch(sessionsProvider)
-        .where((s) => s.category == goal.category && 
-               s.date.toLocal().year == today.year && 
-               s.date.toLocal().month == today.month && 
-               s.date.toLocal().day == today.day)
-        .fold<int>(0, (sum, s) => sum + s.durationSeconds);
+    final int savedTodaySeconds = goal.type == GoalType.time
+        ? ref.watch(sessionsProvider)
+            .where((s) => s.category == goal.category &&
+                s.date.toLocal().year == today.year &&
+                s.date.toLocal().month == today.month &&
+                s.date.toLocal().day == today.day)
+            .fold<int>(0, (sum, s) => sum + s.durationSeconds)
+        : 0;
 
-    // 取得當前計時器狀態 (即時累加)
-    final timerState = ref.watch(timerProvider);
-    final int currentTimingSeconds = (timerState.isRunning && timerState.category == goal.category)
+    // 即時計時器累加（僅時間型需要）
+    final timerState = goal.type == GoalType.time ? ref.watch(timerProvider) : null;
+    final int currentTimingSeconds = (timerState != null && timerState.isRunning && timerState.category == goal.category)
         ? timerState.currentElapsed
         : 0;
 

@@ -36,8 +36,9 @@ class NotificationService {
       return;
     }
 
-    // 將 Goal ID 轉為整數用於通知 ID (取 Hash)
-    final int notifyId = goal.id.hashCode.abs();
+    // 將 Goal ID (UUID) 轉為通知 ID：取前 7 個 hex 字元解析為 int，避免 hashCode 碰撞
+    final String hex = goal.id.replaceAll('-', '').substring(0, 7);
+    final int notifyId = int.parse(hex, radix: 16);
     
     final timeParts = goal.reminderTime!.split(':');
     final int hour = int.parse(timeParts[0]);
@@ -83,7 +84,8 @@ class NotificationService {
 
   static Future<void> cancelGoalReminder(String goalId) async {
     if (kIsWeb) return;
-    await _notifications.cancel(goalId.hashCode.abs());
+    final String hex = goalId.replaceAll('-', '').substring(0, 7);
+    await _notifications.cancel(int.parse(hex, radix: 16));
   }
 
   static tz.TZDateTime _nextInstanceOfTime(int hour, int minute) {

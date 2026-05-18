@@ -230,7 +230,9 @@ class StatisticsPage extends ConsumerWidget {
                 ),
               )
             else
-              Row(
+              Column(
+                children: [
+                  Row(
                 children: [
                   Expanded(
                     flex: 3,
@@ -306,6 +308,33 @@ class StatisticsPage extends ConsumerWidget {
                           ],
                         ),
                       )).toList(),
+                    ),
+                  ),
+                ],
+              ),
+                  const SizedBox(height: 16),
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primary.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.2)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('合計　', style: TextStyle(fontSize: ResponsiveHelper.sp(context, 14), color: Colors.grey.shade600)),
+                          Text(
+                            FormatUtils.formatDurationDetailed(totalSeconds),
+                            style: GoogleFonts.shareTechMono(
+                              fontSize: ResponsiveHelper.sp(context, 18),
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
