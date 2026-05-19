@@ -11,6 +11,8 @@ import '../providers/layout_provider.dart';
 import '../widgets/category_dialogs.dart';
 import '../helpers/responsive_helper.dart';
 import '../theme/cartoon_theme.dart';
+import '../theme/app_themes.dart';
+import '../providers/app_theme_provider.dart';
 
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
@@ -25,36 +27,37 @@ class HomePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final t = ref.watch(currentAppThemeProvider);
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: LayoutBuilder(
         builder: (context, constraints) {
           if (constraints.maxWidth > 800) {
-            return _buildWideLayout(context, ref, constraints);
+            return _buildWideLayout(context, ref, constraints, t);
           } else {
-            return _buildMobileLayout(context, ref, constraints);
+            return _buildMobileLayout(context, ref, constraints, t);
           }
         },
       ),
     );
   }
 
-  Widget _buildMobileLayout(BuildContext context, WidgetRef ref, BoxConstraints constraints) {
+  Widget _buildMobileLayout(BuildContext context, WidgetRef ref, BoxConstraints constraints, AppTheme t) {
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(child: const SizedBox(height: 20)),
-        SliverToBoxAdapter(child: _buildHeader(context, ref)),
+        SliverToBoxAdapter(child: _buildHeader(context, ref, t)),
         SliverToBoxAdapter(child: const SizedBox(height: 16)),
-        SliverToBoxAdapter(child: _buildCategoryList(context, ref)),
+        SliverToBoxAdapter(child: _buildCategoryList(context, ref, t)),
         SliverToBoxAdapter(child: const SizedBox(height: 10)),
-        SliverToBoxAdapter(child: _buildTimerCard(context, ref)),
-        SliverToBoxAdapter(child: _buildActionButtons(context, ref)),
+        SliverToBoxAdapter(child: _buildTimerCard(context, ref, t)),
+        SliverToBoxAdapter(child: _buildActionButtons(context, ref, t)),
         SliverToBoxAdapter(child: const SizedBox(height: 80)),
       ],
     );
   }
 
-  Widget _buildWideLayout(BuildContext context, WidgetRef ref, BoxConstraints constraints) {
+  Widget _buildWideLayout(BuildContext context, WidgetRef ref, BoxConstraints constraints, AppTheme t) {
     return SingleChildScrollView(
       child: ConstrainedBox(
         constraints: BoxConstraints(minHeight: constraints.maxHeight),
@@ -67,36 +70,37 @@ class HomePage extends ConsumerWidget {
                 padding: const EdgeInsets.symmetric(vertical: 48),
                 child: Column(
                   children: [
-                    _buildTimerCard(context, ref, scale: 1.1),
+                    _buildTimerCard(context, ref, t, scale: 1.1),
                     const SizedBox(height: 12),
-                    _buildActionButtons(context, ref),
+                    _buildActionButtons(context, ref, t),
                   ],
                 ),
               ),
             ),
-            Container(width: 3, height: constraints.maxHeight, color: CartoonTheme.inkBlack.withOpacity(0.2)),
+            Container(width: 3, height: constraints.maxHeight, color: t.ink.withOpacity(0.2)),
             Expanded(
               flex: 2,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 48),
-                  _buildHeader(context, ref),
+                  _buildHeader(context, ref, t),
                   const SizedBox(height: 32),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24.0),
                     child: Text(
                       'SELECT CATEGORY',
-                      style: GoogleFonts.outfit(
+                      style: GoogleFonts.getFont(
+                        t.fontBody,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 2,
-                        color: Colors.white.withOpacity(0.6),
+                        color: t.mute,
                       ),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  _buildCategoryList(context, ref),
+                  _buildCategoryList(context, ref, t),
                 ],
               ),
             ),
@@ -106,7 +110,7 @@ class HomePage extends ConsumerWidget {
     );
   }
 
-  Widget _buildHeader(BuildContext context, WidgetRef ref) {
+  Widget _buildHeader(BuildContext context, WidgetRef ref, AppTheme t) {
     final timerNotifier = ref.read(timerProvider.notifier);
 
     return Padding(
@@ -116,11 +120,12 @@ class HomePage extends ConsumerWidget {
         children: [
           Text(
             'Me Time',
-            style: GoogleFonts.fredoka(
+            style: GoogleFonts.getFont(
+              t.fontDisplay,
               fontSize: ResponsiveHelper.sp(context, 24),
               fontWeight: FontWeight.w600,
               letterSpacing: 1.5,
-              color: Colors.white.withOpacity(0.85),
+              color: t.appBarInk,
             ),
           ),
           GestureDetector(
@@ -128,11 +133,11 @@ class HomePage extends ConsumerWidget {
             child: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
+                color: t.appBarInk.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withOpacity(0.4), width: 2),
+                border: Border.all(color: t.appBarInk.withOpacity(0.4), width: 2),
               ),
-              child: const Icon(Icons.sync_rounded, size: 20, color: Colors.white),
+              child: Icon(Icons.sync_rounded, size: 20, color: t.appBarInk),
             ),
           ),
         ],
@@ -140,7 +145,7 @@ class HomePage extends ConsumerWidget {
     );
   }
 
-  Widget _buildCategoryList(BuildContext context, WidgetRef ref) {
+  Widget _buildCategoryList(BuildContext context, WidgetRef ref, AppTheme t) {
     final timerState = ref.watch(timerProvider);
     final visible = ref.watch(timerVisibleCategoriesProvider);
 
@@ -149,8 +154,9 @@ class HomePage extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CartoonSectionLabel(
+          _ThemedSectionLabel(
             text: '項目列表 (可拖曳排序)',
+            textColor: t.mute,
             trailing: Row(
               children: [
                 GestureDetector(
@@ -160,11 +166,11 @@ class HomePage extends ConsumerWidget {
                   child: Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
+                      color: t.appBarInk.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.white.withOpacity(0.4), width: 1.5),
+                      border: Border.all(color: t.appBarInk.withOpacity(0.4), width: 1.5),
                     ),
-                    child: const Icon(Icons.info_outline_rounded, size: 16, color: Colors.white),
+                    child: Icon(Icons.info_outline_rounded, size: 16, color: t.appBarInk),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -173,12 +179,14 @@ class HomePage extends ConsumerWidget {
                   child: Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: CartoonTheme.sunYellow,
+                      color: t.action,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: CartoonTheme.inkBlack, width: 2),
-                      boxShadow: const [BoxShadow(color: CartoonTheme.inkBlack, offset: Offset(2, 2))],
+                      border: t.borderW > 0 ? Border.all(color: t.border, width: 2) : null,
+                      boxShadow: t.shadowOffset != Offset.zero
+                          ? [BoxShadow(color: t.shadowColor, offset: const Offset(2, 2))]
+                          : null,
                     ),
-                    child: const Icon(Icons.add_rounded, size: 16, color: CartoonTheme.inkBlack),
+                    child: Icon(Icons.add_rounded, size: 16, color: t.actionInk),
                   ),
                 ),
               ],
@@ -187,7 +195,11 @@ class HomePage extends ConsumerWidget {
           const SizedBox(height: 8),
           Container(
             constraints: const BoxConstraints(maxHeight: 300),
-            decoration: CartoonTheme.panelDecoration(),
+            decoration: BoxDecoration(
+              color: t.surface.withOpacity(0.18),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: t.ink.withOpacity(0.25), width: 2.5),
+            ),
             child: ReorderableListView(
               buildDefaultDragHandles: false,
               shrinkWrap: true,
@@ -200,16 +212,16 @@ class HomePage extends ConsumerWidget {
                 ...visible.asMap().entries.map((entry) {
                   final i = entry.key;
                   final cat = entry.value;
-                  return _buildCategoryChip(context, ref, cat, timerState, i);
+                  return _buildCategoryChip(context, ref, cat, timerState, i, t);
                 }),
                 if (visible.isEmpty)
-                  const Padding(
-                    key: ValueKey('empty_prompt'),
-                    padding: EdgeInsets.symmetric(vertical: 32),
+                  Padding(
+                    key: const ValueKey('empty_prompt'),
+                    padding: const EdgeInsets.symmetric(vertical: 32),
                     child: Center(
                       child: Text(
                         '尚未新增項目，點擊上方＋號',
-                        style: TextStyle(color: Colors.white70, fontSize: 13),
+                        style: TextStyle(color: t.mute, fontSize: 13),
                       ),
                     ),
                   ),
@@ -221,7 +233,7 @@ class HomePage extends ConsumerWidget {
     );
   }
 
-  Widget _buildCategoryChip(BuildContext context, WidgetRef ref, String cat, TimerState timerState, int index) {
+  Widget _buildCategoryChip(BuildContext context, WidgetRef ref, String cat, TimerState timerState, int index, AppTheme t) {
     final isSelected = timerState.category == cat;
     final catColor = ref.watch(categoryColorProvider)[cat] ?? Colors.grey;
 
@@ -234,7 +246,9 @@ class HomePage extends ConsumerWidget {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: CartoonTheme.chipDecoration(isSelected: isSelected, activeColor: catColor),
+          decoration: chipDecoration(t, selected: isSelected).copyWith(
+            color: isSelected ? catColor : t.chipBg,
+          ),
           child: Row(
             children: [
               ReorderableDragStartListener(
@@ -243,7 +257,7 @@ class HomePage extends ConsumerWidget {
                   padding: const EdgeInsets.only(right: 12),
                   child: Icon(
                     Icons.drag_indicator_rounded,
-                    color: isSelected ? CartoonTheme.inkBlack.withOpacity(0.4) : Colors.grey.withOpacity(0.5),
+                    color: isSelected ? t.ink.withOpacity(0.4) : Colors.grey.withOpacity(0.5),
                     size: 20,
                   ),
                 ),
@@ -253,7 +267,7 @@ class HomePage extends ConsumerWidget {
                   cat,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: isSelected ? Colors.white : CartoonTheme.inkBlack,
+                    color: isSelected ? t.chipInkSel : t.chipInk,
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
@@ -263,13 +277,13 @@ class HomePage extends ConsumerWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.25),
+                    color: t.surface.withOpacity(0.25),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.white.withOpacity(0.4), width: 1),
+                    border: Border.all(color: t.surface.withOpacity(0.4), width: 1),
                   ),
                   child: Text(
                     '${(timerState.currentElapsed / 60).floor()}m',
-                    style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold),
+                    style: TextStyle(fontSize: 11, color: t.chipInkSel, fontWeight: FontWeight.bold),
                   ),
                 ),
             ],
@@ -279,7 +293,7 @@ class HomePage extends ConsumerWidget {
     );
   }
 
-  Widget _buildTimerCard(BuildContext context, WidgetRef ref, {double scale = 1.0}) {
+  Widget _buildTimerCard(BuildContext context, WidgetRef ref, AppTheme t, {double scale = 1.0}) {
     final timerState = ref.watch(timerProvider);
     final timerColor = ref.watch(timerColorProvider);
     final sessions = ref.watch(sessionsProvider);
@@ -293,38 +307,47 @@ class HomePage extends ConsumerWidget {
     int realTimeDailyTotal = dailyBaseTotal + timerState.currentElapsed;
     final displayScale = scale * ResponsiveHelper.getTimerScale(context);
 
-    final digitalStyle = GoogleFonts.fredoka(
+    final effectiveTimerColor = timerColor != CartoonTheme.goldenOrange ? timerColor : t.accent;
+    final digitalStyle = GoogleFonts.getFont(
+      t.fontTimer,
       fontSize: 96 * displayScale,
       fontWeight: FontWeight.w700,
-      color: CartoonTheme.goldenOrange,
+      color: effectiveTimerColor,
       shadows: [
         const Shadow(color: Color(0x22000000), offset: Offset(3, 3), blurRadius: 0),
-        if (timerState.isRunning)
-          Shadow(color: CartoonTheme.warmYellow.withOpacity(0.5), blurRadius: 24),
+        if (timerState.isRunning && t.timerHaloOn)
+          Shadow(color: t.accentSoft, blurRadius: 24),
       ],
     );
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       padding: EdgeInsets.all(32 * scale),
-      decoration: CartoonTheme.cardDecoration(
-        color: CartoonTheme.creamWhite,
-        radius: 40,
-        borderWidth: 4,
-        shadowOffset: 6,
+      decoration: cardDecoration(t).copyWith(
+        borderRadius: BorderRadius.circular(40),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (timerState.isRunning && t.timerHaloOn)
+            Container(
+              width: 180 * displayScale,
+              height: 180 * displayScale,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(colors: [t.accentSoft, Colors.transparent]),
+              ),
+            ),
           Text(
-            timerState.isRunning ? 'GO GO GO! 🎯' : 'ME TIME ⏱',
+            timerState.isRunning ? t.runningLabel : t.timerLabel,
             textAlign: TextAlign.center,
-            style: GoogleFonts.fredoka(
+            style: GoogleFonts.getFont(
+              t.fontDisplay,
               fontSize: ResponsiveHelper.sp(context, 18) * scale,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.5,
-              color: CartoonTheme.warmYellow,
+              color: t.accent,
             ),
           ),
           const SizedBox(height: 4),
@@ -336,30 +359,31 @@ class HomePage extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
             decoration: BoxDecoration(
-              color: CartoonTheme.inkBlack.withOpacity(0.06),
+              color: t.ink.withOpacity(0.06),
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: CartoonTheme.inkBlack.withOpacity(0.12), width: 2),
+              border: Border.all(color: t.ink.withOpacity(0.12), width: 2),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.timer_rounded, size: 18, color: Color(0xFF555555)),
+                Icon(Icons.timer_rounded, size: 18, color: t.mute),
                 const SizedBox(width: 8),
                 Text(
                   '今天已累積',
                   style: TextStyle(
                     fontSize: ResponsiveHelper.sp(context, 14) * scale,
                     fontWeight: FontWeight.w700,
-                    color: const Color(0xFF444444),
+                    color: t.ink,
                   ),
                 ),
                 const SizedBox(width: 6),
                 Text(
                   _formatTime(realTimeDailyTotal),
-                  style: GoogleFonts.fredoka(
+                  style: GoogleFonts.getFont(
+                    t.fontDisplay,
                     fontWeight: FontWeight.w700,
                     fontSize: ResponsiveHelper.sp(context, 18) * scale,
-                    color: CartoonTheme.inkBlack,
+                    color: t.ink,
                   ),
                 ),
               ],
@@ -370,7 +394,7 @@ class HomePage extends ConsumerWidget {
     );
   }
 
-  Widget _buildActionButtons(BuildContext context, WidgetRef ref) {
+  Widget _buildActionButtons(BuildContext context, WidgetRef ref, AppTheme t) {
     final timerState = ref.watch(timerProvider);
     final timerNotifier = ref.read(timerProvider.notifier);
 
@@ -403,13 +427,10 @@ class HomePage extends ConsumerWidget {
               },
               child: Container(
                 width: 58, height: 58,
-                decoration: CartoonTheme.cardDecoration(
-                  color: CartoonTheme.softGrey,
-                  radius: 18,
-                  borderWidth: 3,
-                  shadowOffset: 3,
+                decoration: cardDecoration(t, color: t.surfaceAlt).copyWith(
+                  borderRadius: BorderRadius.circular(18),
                 ),
-                child: const Icon(Icons.refresh_rounded, size: 26, color: Color(0xFF888888)),
+                child: Icon(Icons.refresh_rounded, size: 26, color: t.mute),
               ),
             )
           else
@@ -439,16 +460,11 @@ class HomePage extends ConsumerWidget {
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 250),
                   width: 100, height: 100,
-                  decoration: CartoonTheme.buttonDecoration(
-                    color: timerState.isRunning ? Colors.white : CartoonTheme.sunYellow,
-                    radius: 50,
-                    borderWidth: 4,
-                    shadowOffset: 5,
-                  ),
+                  decoration: buttonDecoration(t),
                   child: Icon(
                     timerState.isRunning ? Icons.pause_rounded : Icons.play_arrow_rounded,
                     size: 58,
-                    color: timerState.isRunning ? CartoonTheme.inkBlack : CartoonTheme.inkBlack,
+                    color: t.actionInk,
                   ),
                 ),
               ),
@@ -463,11 +479,8 @@ class HomePage extends ConsumerWidget {
               onTap: () => _showStopAndSaveDialog(context, ref),
               child: Container(
                 width: 58, height: 58,
-                decoration: CartoonTheme.cardDecoration(
-                  color: CartoonTheme.softRed,
-                  radius: 18,
-                  borderWidth: 3,
-                  shadowOffset: 3,
+                decoration: cardDecoration(t, color: const Color(0xFFFF5252)).copyWith(
+                  borderRadius: BorderRadius.circular(18),
                 ),
                 child: const Icon(Icons.stop_rounded, size: 30, color: Colors.white),
               ),
@@ -518,15 +531,36 @@ class HomePage extends ConsumerWidget {
               );
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: CartoonTheme.sunYellow,
-              foregroundColor: CartoonTheme.inkBlack,
-              side: const BorderSide(color: CartoonTheme.inkBlack, width: 2),
+              backgroundColor: const Color(0xFFFFD60A),
+              foregroundColor: const Color(0xFF1A1A2E),
+              side: const BorderSide(color: Color(0xFF1A1A2E), width: 2),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             child: const Text('完成並儲存', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ThemedSectionLabel extends StatelessWidget {
+  final String text;
+  final Color textColor;
+  final Widget? trailing;
+  const _ThemedSectionLabel({required this.text, required this.textColor, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          text,
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5, color: textColor),
+        ),
+        if (trailing != null) trailing!,
+      ],
     );
   }
 }

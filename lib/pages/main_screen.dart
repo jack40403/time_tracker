@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../services/update_service.dart';
+import '../providers/app_theme_provider.dart';
 import 'home_page.dart';
 import 'statistics_page.dart';
 import 'history_page.dart';
@@ -48,9 +49,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final navBg = isDark ? const Color(0xFF1A1A2E) : const Color(0xFFFFFDE7);
-    final borderColor = isDark ? const Color(0xFF48CAE4) : const Color(0xFF1A1A2E);
+    final t = ref.watch(currentAppThemeProvider);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -59,10 +58,10 @@ class _MainScreenState extends ConsumerState<MainScreen> {
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: navBg,
-          border: Border(top: BorderSide(color: borderColor, width: 3)),
+          color: t.navBg,
+          border: Border(top: BorderSide(color: t.navBorder, width: 3)),
           boxShadow: [
-            BoxShadow(color: borderColor.withOpacity(0.3), offset: const Offset(0, -3), blurRadius: 0),
+            BoxShadow(color: t.navBorder.withOpacity(0.3), offset: const Offset(0, -3), blurRadius: 0),
           ],
         ),
         child: NavigationBar(
@@ -71,6 +70,16 @@ class _MainScreenState extends ConsumerState<MainScreen> {
           backgroundColor: Colors.transparent,
           surfaceTintColor: Colors.transparent,
           shadowColor: Colors.transparent,
+          indicatorColor: t.active,
+          labelTextStyle: WidgetStateProperty.all(
+            TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: t.navInk),
+          ),
+          iconTheme: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return IconThemeData(size: 26, color: t.actionInk);
+            }
+            return IconThemeData(size: 26, color: t.navInk);
+          }),
           destinations: const [
             NavigationDestination(icon: Icon(Icons.timer_outlined), selectedIcon: Icon(Icons.timer_rounded), label: '計時'),
             NavigationDestination(icon: Icon(Icons.bar_chart_outlined), selectedIcon: Icon(Icons.bar_chart_rounded), label: '統計'),

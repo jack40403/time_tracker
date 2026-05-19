@@ -16,6 +16,7 @@ import 'firebase_options.dart';
 import 'pages/main_screen.dart';
 import 'widgets/background_wrapper.dart';
 import 'widgets/app_lifecycle_manager.dart';
+import 'widgets/splash_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // Main Entry Point
@@ -62,9 +63,6 @@ void main() async {
     });
   }
 
-  // 強制延遲 2 秒，確保資源與字體完全讀取，避免「叉叉」圖示出現
-  await Future.delayed(const Duration(seconds: 2));
-  
   runApp(
     ProviderScope(
       overrides: [
@@ -74,7 +72,7 @@ void main() async {
     ),
   );
 
-  // 移除原生啟動圖，開始 Flutter 層級的漸淡動畫
+  // 移除原生啟動圖，讓 Flutter SplashScreen 接手
   FlutterNativeSplash.remove();
 
   // Passive initial update check
@@ -211,72 +209,8 @@ class TimeTrackerApp extends ConsumerWidget {
           elevation: 0,
         ),
       ),
-      home: const SplashFadeWrapper(
-        child: AppLifecycleManager(
-          child: BackgroundWrapper(
-            child: MainScreen(),
-          ),
-        ),
-      ),
+      home: const SplashScreen(),
     );
   }
 }
 
-/// 漸影啟動包裝器
-/// 提供從啟動圖到主介面的平滑過度
-class SplashFadeWrapper extends StatefulWidget {
-  final Widget child;
-  const SplashFadeWrapper({super.key, required this.child});
-
-  @override
-  State<SplashFadeWrapper> createState() => _SplashFadeWrapperState();
-}
-
-class _SplashFadeWrapperState extends State<SplashFadeWrapper> {
-  bool _visible = true;
-
-  @override
-  void initState() {
-    super.initState();
-    // 當組件掛載後，立即開始淡出動畫
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(milliseconds: 100), () {
-        if (mounted) {
-          setState(() => _visible = false);
-        }
-      });
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        // 主應用內容
-        widget.child,
-        
-        // 浮動在上面的淡出層（模擬啟動圖）
-        if (_visible || true) // 保留組件直到透明度變為 0
-        IgnorePointer(
-          ignoring: !_visible,
-          child: AnimatedOpacity(
-            opacity: _visible ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 800),
-            curve: Curves.easeInOut,
-            onEnd: () => setState(() => _visible = false),
-            child: Container(
-              color: const Color(0xFF1A237E), // 與原生啟動色一致的深錠藍
-              child: Center(
-                child: Image.asset(
-                  'assets/icon/app_icon.png',
-                  width: 256, // 放大顯示，具備高級感
-                  height: 256,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
