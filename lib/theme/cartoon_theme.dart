@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../providers/app_theme_provider.dart';
 
 class CartoonTheme {
   // Core palette
@@ -135,8 +138,8 @@ class CartoonBubbles extends StatelessWidget {
   }
 }
 
-// Cartoon-style AppBar
-class CartoonAppBar extends StatelessWidget implements PreferredSizeWidget {
+// Cartoon-style AppBar — now theme-aware
+class CartoonAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final String title;
   final List<Widget>? actions;
 
@@ -146,16 +149,16 @@ class CartoonAppBar extends StatelessWidget implements PreferredSizeWidget {
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 
   @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = ref.watch(currentAppThemeProvider);
     return AppBar(
       title: Text(
         title,
-        style: TextStyle(
-          fontFamily: 'Fredoka',
+        style: GoogleFonts.getFont(
+          t.fontDisplay,
           fontSize: 22,
           fontWeight: FontWeight.w700,
-          color: isDark ? Colors.white : CartoonTheme.inkBlack,
+          color: t.appBarInk,
           letterSpacing: 1,
         ),
       ),
@@ -163,6 +166,7 @@ class CartoonAppBar extends StatelessWidget implements PreferredSizeWidget {
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: false,
+      iconTheme: IconThemeData(color: t.appBarInk),
       actions: actions,
     );
   }

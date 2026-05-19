@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../theme/cartoon_theme.dart';
+import '../theme/app_themes.dart';
+import '../providers/app_theme_provider.dart';
 import '../models/time_session.dart';
 import '../providers/session_provider.dart';
 import '../providers/category_provider.dart';
@@ -45,6 +47,7 @@ class StatisticsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final t = ref.watch(currentAppThemeProvider);
     final allSessions = ref.watch(sessionsProvider);
     final filter = ref.watch(statsFilterProvider);
     final offset = ref.watch(statsOffsetProvider);
@@ -101,7 +104,11 @@ class StatisticsPage extends ConsumerWidget {
             // Filter Chips
             Center(
               child: Container(
-                decoration: CartoonTheme.panelDecoration(radius: 16),
+                decoration: BoxDecoration(
+                  color: t.surface.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: t.ink.withOpacity(0.2), width: 2),
+                ),
                 padding: const EdgeInsets.all(4),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,

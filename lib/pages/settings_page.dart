@@ -29,6 +29,8 @@ import '../helpers/debug_helper.dart';
 import '../services/backup_service.dart';
 import 'package:file_picker/file_picker.dart' show FilePicker, FileType; // 顯式導入關鍵類型
 import '../helpers/platform_helper.dart'; // 引入自定義平台輔助
+import '../theme/app_themes.dart';
+import '../providers/app_theme_provider.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -762,6 +764,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
           const Padding(
             padding: EdgeInsets.fromLTRB(20, 24, 20, 8),
+            child: Text('🎨 外觀主題', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue)),
+          ),
+          const _ThemeSelectorCard(),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 24, 20, 8),
             child: Text('客製化外觀', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue)),
           ),
           Padding(
@@ -1402,5 +1409,172 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         );
       }
     }
+  }
+}
+
+// ─── Theme selector card ──────────────────────────────────────────────────────
+
+class _ThemeSelectorCard extends ConsumerWidget {
+  const _ThemeSelectorCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final currentId = ref.watch(appThemeIdProvider);
+    final currentTheme = ref.watch(currentAppThemeProvider);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text('目前：', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                Text(
+                  currentTheme.displayName,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: currentTheme.accent,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 108,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: kThemeOrder.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (context, index) {
+                  final id = kThemeOrder[index];
+                  final t = kAppThemes[id]!;
+                  final selected = currentId == id;
+                  return GestureDetector(
+                    onTap: () => ref.read(appThemeIdProvider.notifier).set(id),
+                    child: _ThemeSwatch(theme: t, selected: selected),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemeSwatch extends StatelessWidget {
+  final AppTheme theme;
+  final bool selected;
+
+  const _ThemeSwatch({required this.theme, required this.selected});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = theme;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      width: 72,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: selected ? t.accent : Colors.transparent,
+          width: 2.5,
+        ),
+        boxShadow: selected
+            ? [BoxShadow(color: t.accent.withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 2))]
+            : null,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          children: [
+            // Preview: background + mini card + dot
+            Expanded(
+              child: Container(
+                decoration: t.bgIsGradient
+                    ? BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: t.bgBegin,
+                          end: t.bgEnd,
+                          colors: t.bgColor3 != const Color(0xFF000000) && t.bgColor3 != t.bgColor1
+                              ? [t.bgColor1, t.bgColor2, t.bgColor3]
+                              : [t.bgColor1, t.bgColor2],
+                        ),
+                      )
+                    : BoxDecoration(color: t.bgColor1),
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: t.surface,
+                          borderRadius: BorderRadius.circular(t.cardRadius / 3),
+                          border: t.borderW > 0 ? Border.all(color: t.border, width: 1) : null,
+                        ),
+                        child: Center(
+                          child: Container(
+                            width: 16,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              color: t.accent,
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: t.action,
+                          border: t.borderW > 0 ? Border.all(color: t.border, width: 1) : null,
+                        ),
+                      ),
+                      if (selected) ...[
+                        const SizedBox(height: 2),
+                        Icon(Icons.check_circle, size: 10, color: t.accent),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            // Label
+            Container(
+              color: t.navBg,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Center(
+                child: Text(
+                  t.displayName,
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    color: t.navInk,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
