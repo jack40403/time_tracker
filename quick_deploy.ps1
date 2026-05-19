@@ -1,4 +1,4 @@
-# Elite Time Tracker - Pro Deploy Script v3 (Ultra Robust)
+﻿# Elite Time Tracker - Pro Deploy Script v3 (Ultra Robust)
 
 Write-Host "--- [1/5] Building Android APK... ---" -ForegroundColor Cyan
 C:\flutter\bin\flutter.bat build apk --release
@@ -48,11 +48,11 @@ $jsonObj = @{
   version = $versionName
   buildNumber = $buildNumber.ToString()
   url = "https://metimegoalgoal.web.app/$versionedApkName"
-  changelog = "v$versionName (Build $buildNumber): Updated background service and notification behavior."
+  changelog = "v$versionName (Build $buildNumber): 新增 5 大外觀主題選擇與豪華開場動畫系統，優化歷史編輯與同步機制。"
   timestamp = $timestamp
 }
 $versionJson = $jsonObj | ConvertTo-Json
-[System.IO.File]::WriteAllText("build/web/version.json", $versionJson, (New-Object System.Text.UTF8Encoding($false)))
+$versionJson | Out-File "build/web/version.json" -Encoding UTF8
 Write-Host "version.json generated: v$versionName+$buildNumber" -ForegroundColor Green
 
 Write-Host "--- FINISHING: Deploying to Firebase ---" -ForegroundColor Cyan

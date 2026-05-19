@@ -64,29 +64,33 @@ class _MainScreenState extends ConsumerState<MainScreen> {
             BoxShadow(color: t.navBorder.withOpacity(0.3), offset: const Offset(0, -3), blurRadius: 0),
           ],
         ),
-        child: NavigationBar(
-          selectedIndex: _currentIndex,
-          onDestinationSelected: (index) => setState(() => _currentIndex = index),
-          backgroundColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          shadowColor: Colors.transparent,
-          indicatorColor: t.active,
-          labelTextStyle: WidgetStateProperty.all(
-            TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: t.navInk),
+        child: NavigationBarTheme(
+          data: NavigationBarThemeData(
+            iconTheme: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) {
+                return IconThemeData(size: 26, color: t.actionInk);
+              }
+              return IconThemeData(size: 26, color: t.navInk);
+            }),
           ),
-          iconTheme: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.selected)) {
-              return IconThemeData(size: 26, color: t.actionInk);
-            }
-            return IconThemeData(size: 26, color: t.navInk);
-          }),
-          destinations: const [
-            NavigationDestination(icon: Icon(Icons.timer_outlined), selectedIcon: Icon(Icons.timer_rounded), label: '計時'),
-            NavigationDestination(icon: Icon(Icons.bar_chart_outlined), selectedIcon: Icon(Icons.bar_chart_rounded), label: '統計'),
-            NavigationDestination(icon: Icon(Icons.flag_outlined), selectedIcon: Icon(Icons.flag_rounded), label: '目標'),
-            NavigationDestination(icon: Icon(Icons.history_outlined), selectedIcon: Icon(Icons.history_rounded), label: '歷史'),
-            NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings_rounded), label: '設定'),
-          ],
+          child: NavigationBar(
+            selectedIndex: _currentIndex,
+            onDestinationSelected: (index) => setState(() => _currentIndex = index),
+            backgroundColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            indicatorColor: t.active,
+            labelTextStyle: WidgetStateProperty.all(
+              TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: t.navInk),
+            ),
+            destinations: const [
+              NavigationDestination(icon: Icon(Icons.timer_outlined), selectedIcon: Icon(Icons.timer_rounded), label: '計時'),
+              NavigationDestination(icon: Icon(Icons.bar_chart_outlined), selectedIcon: Icon(Icons.bar_chart_rounded), label: '統計'),
+              NavigationDestination(icon: Icon(Icons.flag_outlined), selectedIcon: Icon(Icons.flag_rounded), label: '目標'),
+              NavigationDestination(icon: Icon(Icons.history_outlined), selectedIcon: Icon(Icons.history_rounded), label: '歷史'),
+              NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings_rounded), label: '設定'),
+            ],
+          ),
         ),
       ),
     );
