@@ -177,14 +177,14 @@ const AppTheme cartoonTheme = AppTheme(
   surface: Color(0xFFFFFDE7),
   surfaceAlt: Color(0xFFF5F3D8),
   ink: Color(0xFF1A1A2E),
-  mute: Color(0x99FFFFFF),
+  mute: Color(0xFF091F35), // 深海藍：sky-blue 8.6:1 / ocean-blue 3.4:1(背景物理上限) / cream 16.2:1
   accent: Color(0xFFFF8F00),
   accentSoft: Color(0x80FFB300),
   action: Color(0xFFFFD60A),
   actionInk: Color(0xFF1A1A2E),
   active: Color(0xFFFFD60A),
   chipInk: Color(0xFF1A1A2E),
-  chipInkSel: Color(0xFF1A1A2E), // 黃底用深色字，避免白字黃底對比不足
+  chipInkSel: Color(0xFF1A1A2E), // 黃底用深色字 12.1:1
   chipBg: Color(0xE6FFFFFF),
   border: Color(0xFF1A1A2E),
   borderW: 3.5,
@@ -198,7 +198,7 @@ const AppTheme cartoonTheme = AppTheme(
   navBg: Color(0xFFFFFDE7),
   navInk: Color(0xFF1A1A2E),
   navBorder: Color(0xFF1A1A2E),
-  appBarInk: Color(0xEAFFFFFF),
+  appBarInk: Color(0xFF1A1A2E), // 深色：sky-blue 8.8:1（AppBar 永遠在頂部天藍區）
   timerLabel: 'ME TIME ⏱',
   runningLabel: 'GO GO GO! 🎯',
   timerHaloOn: false,
@@ -253,14 +253,14 @@ const AppTheme retroTheme = AppTheme(
   surface: Color(0xFFEADFC4),
   surfaceAlt: Color(0xFFC9B687),
   ink: Color(0xFF3D2F1F),
-  mute: Color(0xFF7A6647),
+  mute: Color(0xFF5A3E28), // 深棕：bg 5.7:1 / surface 7.4:1
   accent: Color(0xFF8B4513),
   accentSoft: Color(0x408B4513),
   action: Color(0xFFA0522D),
   actionInk: Color(0xFFF5EDD8),
   active: Color(0xFF8B6F3A),
   chipInk: Color(0xFF3D2F1F),
-  chipInkSel: Color(0xFFF5EDD8),
+  chipInkSel: Color(0xFFFFFFFF), // 純白：棕底 4.7:1（cream 只有 4.1:1）
   chipBg: Color(0xFFEADFC4),
   border: Color(0xFF3D2F1F),
   borderW: 3,
@@ -272,7 +272,7 @@ const AppTheme retroTheme = AppTheme(
   fontBody: 'VT323',
   fontTimer: 'Press Start 2P',
   navBg: Color(0xFF8B6F3A),
-  navInk: Color(0xFFF5EDD8),
+  navInk: Color(0xFFFFFFFF), // 純白：棕底 4.7:1
   navBorder: Color(0xFF3D2F1F),
   appBarInk: Color(0xFF3D2F1F),
   timerLabel: 'ME TIME',
@@ -293,7 +293,7 @@ const AppTheme pastelTheme = AppTheme(
   surface: Color(0xFFFFFFFF),
   surfaceAlt: Color(0xFFFFE5EC),
   ink: Color(0xFF6B3F61),
-  mute: Color(0x8C6B3F61),
+  mute: Color(0xFF4A2B47), // 深紫：bg-top 10.2:1 / bg-bot 6.7:1 / surface 12.2:1
   accent: Color(0xFFFF8FA3),
   accentSoft: Color(0x59FF8FA3),
   action: Color(0xFFFFB3C6),
@@ -329,7 +329,7 @@ const AppTheme minimalTheme = AppTheme(
   surface: Color(0xFFFFFFFF),
   surfaceAlt: Color(0xFFF1F0EB),
   ink: Color(0xFF111111),
-  mute: Color(0xFF9A9A95),
+  mute: Color(0xFF6B6B6B), // 深灰：bg 5.1:1 / surface 5.3:1（原 9A9A95 僅 2.7:1）
   accent: Color(0xFF111111),
   accentSoft: Color(0x14000000),
   action: Color(0xFF111111),
