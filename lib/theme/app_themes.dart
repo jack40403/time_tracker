@@ -184,7 +184,7 @@ const AppTheme cartoonTheme = AppTheme(
   actionInk: Color(0xFF1A1A2E),
   active: Color(0xFFFFD60A),
   chipInk: Color(0xFF1A1A2E),
-  chipInkSel: Colors.white,
+  chipInkSel: Color(0xFF1A1A2E), // 黃底用深色字，避免白字黃底對比不足
   chipBg: Color(0xE6FFFFFF),
   border: Color(0xFF1A1A2E),
   borderW: 3.5,
@@ -300,7 +300,7 @@ const AppTheme pastelTheme = AppTheme(
   actionInk: Color(0xFF6B3F61),
   active: Color(0xFFC8B6FF),
   chipInk: Color(0xFF6B3F61),
-  chipInkSel: Colors.white,
+  chipInkSel: Color(0xFF6B3F61), // 淡紫底用深紫字，避免白字淡紫底對比不足
   chipBg: Color(0xFFFFFFFF),
   border: Color(0xFFFFB3C6),
   borderW: 0,

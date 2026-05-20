@@ -31,29 +31,42 @@ class BackgroundWrapper extends ConsumerWidget {
   }
 
   Widget _buildBackground(BackgroundState state, AppTheme t) {
-    if (!state.isCustom) {
-      return AnimatedContainer(
-        key: ValueKey(t.id),
-        duration: const Duration(milliseconds: 400),
-        decoration: t.backgroundDecoration,
-      );
-    }
+    // 主題背景永遠是最底層，確保主題顯示不受浮水印影響
+    final themeBase = AnimatedContainer(
+      key: ValueKey(t.id),
+      duration: const Duration(milliseconds: 400),
+      decoration: t.backgroundDecoration,
+    );
 
+    if (!state.isCustom) return themeBase;
+
+    // 自定義色/圖只是疊加在主題上的半透明層（浮水印）
+    Widget? overlay;
     if (state.imagePath != null) {
-      return Opacity(
+      overlay = Opacity(
         opacity: state.opacity,
         child: getPlatformImage(
           state.imagePath!,
           key: ValueKey(state.imagePath),
           fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey),
+          errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
         ),
+      );
+    } else if (state.color != null) {
+      overlay = Opacity(
+        opacity: state.opacity,
+        child: Container(key: ValueKey(state.color!.value), color: state.color),
       );
     }
 
-    return Opacity(
-      opacity: state.opacity,
-      child: Container(key: ValueKey(state.color?.value), color: state.color),
+    if (overlay == null) return themeBase;
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        themeBase,
+        overlay,
+      ],
     );
   }
 }
