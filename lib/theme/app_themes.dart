@@ -57,6 +57,8 @@ class AppTheme {
   final String timerLabel;
   final String runningLabel;
   final bool timerHaloOn;
+  // Optional timer digit color override (falls back to accent if null)
+  final Color? timerInk;
 
   // Background decoration style
   final String bubbleStyle; // 'cartoon' | 'cartoon-dark' | 'pixel' | 'pastel' | 'none'
@@ -98,6 +100,7 @@ class AppTheme {
     required this.timerLabel,
     required this.runningLabel,
     this.timerHaloOn = false,
+    this.timerInk,
     required this.bubbleStyle,
   });
 
@@ -255,7 +258,7 @@ const AppTheme retroTheme = AppTheme(
   ink: Color(0xFF3D2F1F),
   mute: Color(0xFF5A3E28), // 深棕：bg 5.7:1 / surface 7.4:1
   accent: Color(0xFF8B4513),
-  accentSoft: Color(0x408B4513),
+  accentSoft: Color(0x66FFB300),
   action: Color(0xFFA0522D),
   actionInk: Color(0xFFF5EDD8),
   active: Color(0xFF8B6F3A),
@@ -270,14 +273,15 @@ const AppTheme retroTheme = AppTheme(
   chipRadius: 2,
   fontDisplay: 'Press Start 2P',
   fontBody: 'VT323',
-  fontTimer: 'Press Start 2P',
+  fontTimer: 'VT323',
+  timerInk: Color(0xFFFFB300),
+  timerHaloOn: true,
   navBg: Color(0xFF8B6F3A),
   navInk: Color(0xFFFFFFFF), // 純白：棕底 4.7:1
   navBorder: Color(0xFF3D2F1F),
   appBarInk: Color(0xFF3D2F1F),
   timerLabel: 'ME TIME',
   runningLabel: 'GO! GO! GO!',
-  timerHaloOn: false,
   bubbleStyle: 'pixel',
 );
 

@@ -307,7 +307,7 @@ class HomePage extends ConsumerWidget {
     int realTimeDailyTotal = dailyBaseTotal + timerState.currentElapsed;
     final displayScale = scale * ResponsiveHelper.getTimerScale(context);
 
-    final effectiveTimerColor = timerColor != CartoonTheme.goldenOrange ? timerColor : t.accent;
+    final effectiveTimerColor = timerColor != CartoonTheme.goldenOrange ? timerColor : (t.timerInk ?? t.accent);
     final digitalStyle = GoogleFonts.getFont(
       t.fontTimer,
       fontSize: 96 * displayScale,
