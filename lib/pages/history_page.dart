@@ -481,7 +481,12 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(s.category, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18), overflow: TextOverflow.ellipsis),
-                                          Text('${s.date.hour.toString().padLeft(2, '0')}:${s.date.minute.toString().padLeft(2, '0')}', style: const TextStyle(fontSize: 15, color: Colors.grey)),
+                                          Builder(builder: (context) {
+                                            final end = s.date.add(Duration(seconds: s.durationSeconds));
+                                            final start = '${s.date.hour.toString().padLeft(2, '0')}:${s.date.minute.toString().padLeft(2, '0')}';
+                                            final endStr = '${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}';
+                                            return Text('$start → $endStr', style: const TextStyle(fontSize: 15, color: Colors.grey));
+                                          }),
                                         ],
                                       ),
                                     ),
