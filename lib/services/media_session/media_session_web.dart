@@ -31,19 +31,8 @@ class MediaSessionImpl implements MediaSessionInternal {
 
     try {
       js.context.callMethod('eval', ["""
-        const audio = document.getElementById('silent-player');
-        if (audio) {
-          if ($isRunning) {
-            audio.play().catch(e => console.log('Audio play blocked or failed:', e));
-            if ('mediaSession' in navigator) {
-              navigator.mediaSession.playbackState = 'playing';
-            }
-          } else {
-            audio.pause();
-            if ('mediaSession' in navigator) {
-              navigator.mediaSession.playbackState = 'paused';
-            }
-          }
+        if ('mediaSession' in navigator) {
+          navigator.mediaSession.playbackState = '${isRunning ? 'playing' : 'paused'}';
         }
       """]);
     } catch (e) {
