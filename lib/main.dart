@@ -90,8 +90,9 @@ class TimeTrackerApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
     final appTheme = ref.watch(currentAppThemeProvider);
-    // 深色 AppTheme 強制使用 dark Material theme，避免系統淺色模式造成文字撞背景
-    final effectiveThemeMode = appTheme.id == 'dark' ? ThemeMode.dark : themeMode;
+    // 每個 AppTheme 有固定設計亮度，強制 Material theme 跟著走，避免系統亮度不符造成文字撞背景
+    const _darkAppThemeIds = {'dark'};
+    final effectiveThemeMode = _darkAppThemeIds.contains(appTheme.id) ? ThemeMode.dark : ThemeMode.light;
 
     final baseLightTextTheme = GoogleFonts.outfitTextTheme();
     final baseDarkTextTheme = GoogleFonts.outfitTextTheme(ThemeData.dark().textTheme);
