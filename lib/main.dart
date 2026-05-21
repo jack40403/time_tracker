@@ -18,6 +18,7 @@ import 'widgets/background_wrapper.dart';
 import 'widgets/app_lifecycle_manager.dart';
 import 'widgets/splash_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'providers/app_theme_provider.dart';
 
 // Main Entry Point
 // ==========================================
@@ -88,7 +89,10 @@ class TimeTrackerApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
-    
+    final appTheme = ref.watch(currentAppThemeProvider);
+    // 深色 AppTheme 強制使用 dark Material theme，避免系統淺色模式造成文字撞背景
+    final effectiveThemeMode = appTheme.id == 'dark' ? ThemeMode.dark : themeMode;
+
     final baseLightTextTheme = GoogleFonts.outfitTextTheme();
     final baseDarkTextTheme = GoogleFonts.outfitTextTheme(ThemeData.dark().textTheme);
 
@@ -113,7 +117,7 @@ class TimeTrackerApp extends ConsumerWidget {
     return MaterialApp(
       title: 'Me Time',
       debugShowCheckedModeBanner: false,
-      themeMode: themeMode,
+      themeMode: effectiveThemeMode,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF0077B6),
