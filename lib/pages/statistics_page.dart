@@ -11,6 +11,7 @@ import '../providers/category_provider.dart';
 import '../providers/timer_provider.dart';
 import '../providers/ui_providers.dart';
 import '../widgets/bar_chart_demo.dart';
+import '../widgets/trend_line_chart.dart';
 import '../widgets/elite_date_range_picker.dart';
 import 'category_detail_page.dart';
 import '../helpers/format_utils.dart';
@@ -355,6 +356,64 @@ class StatisticsPage extends ConsumerWidget {
               decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: Theme.of(context).colorScheme.outlineVariant)),
               child: BarChartDemo(sessions: allSessions, filter: filter, offset: offset),
             ),
+            const SizedBox(height: 40),
+            Text('分類趨勢', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            Text(
+              filter == 'daily' || filter == 'custom' ? '近 14 天' :
+              filter == 'weekly' ? '近 8 週' :
+              filter == 'monthly' ? '近 12 個月' : '近 5 年',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              height: 240,
+              padding: const EdgeInsets.fromLTRB(4, 16, 16, 8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+              ),
+              child: () {
+                final top5Colors = categoryFilter != null
+                    ? catColors
+                    : Map.fromEntries(
+                        (categoryTotals.entries.toList()
+                          ..sort((a, b) => b.value.compareTo(a.value)))
+                          .take(5)
+                          .map((e) => MapEntry(e.key, catColors[e.key] ?? Colors.grey)),
+                      );
+                if (top5Colors.isEmpty) {
+                  return Center(child: Text('此區段無紀錄', style: TextStyle(color: Colors.grey.shade400)));
+                }
+                return TrendLineChart(
+                  sessions: allSessions,
+                  filter: filter,
+                  offset: offset,
+                  catColors: top5Colors,
+                  categoryFilter: categoryFilter,
+                );
+              }(),
+            ),
+            if (categoryFilter == null && categoryTotals.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 16,
+                runSpacing: 6,
+                children: (categoryTotals.entries.toList()
+                  ..sort((a, b) => b.value.compareTo(a.value)))
+                  .take(5)
+                  .map((e) => Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(width: 10, height: 10, decoration: BoxDecoration(color: catColors[e.key] ?? Colors.grey, shape: BoxShape.circle)),
+                      const SizedBox(width: 6),
+                      Text(e.key, style: const TextStyle(fontSize: 12)),
+                    ],
+                  ))
+                  .toList(),
+              ),
+            ],
             const SizedBox(height: 40),
             Text(
               '詳細項目',
