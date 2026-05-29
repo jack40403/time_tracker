@@ -205,7 +205,11 @@ class HomePage extends ConsumerWidget {
               shrinkWrap: true,
               physics: const ClampingScrollPhysics(),
               onReorder: (oldIndex, newIndex) {
-                ref.read(categoryColorProvider.notifier).reorderCategories(oldIndex, newIndex);
+                ref.read(categoryColorProvider.notifier).reorderCategories(
+                  oldIndex,
+                  newIndex,
+                  reorderableCategories: visible,
+                );
               },
               padding: const EdgeInsets.all(8),
               children: [

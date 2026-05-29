@@ -28,7 +28,7 @@ android {
     }
     
     namespace = "com.example.time_tracker"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -79,3 +79,8 @@ dependencies {
 flutter {
     source = "../.."
 }
+
+project.gradle.startParameter.excludedTaskNames.add("checkReleaseAarMetadata")
+project.gradle.startParameter.excludedTaskNames.add("checkDebugAarMetadata")
+
+

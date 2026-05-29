@@ -214,32 +214,38 @@ class CategoryColorNotifier extends Notifier<Map<String, Color>> {
     }
   }
 
-  void reorderCategories(int oldIndex, int newIndex) {
-    final visible = ref.read(visibleCategoriesProvider);
+  void reorderCategories(int oldIndex, int newIndex, {List<String>? reorderableCategories}) {
     final all = state.keys.toList();
-    final hidden = ref.read(hiddenCategoriesProvider);
-    
+    final visible = List<String>.from(reorderableCategories ?? ref.read(visibleCategoriesProvider))
+        .where(state.containsKey)
+        .toList();
+
+    if (oldIndex < 0 || oldIndex >= visible.length) return;
+
     if (oldIndex < newIndex) {
       newIndex -= 1;
     }
-    
+    if (newIndex < 0) newIndex = 0;
+    if (newIndex > visible.length) newIndex = visible.length;
+
     final reorderedVisible = List<String>.from(visible);
     final item = reorderedVisible.removeAt(oldIndex);
     reorderedVisible.insert(newIndex, item);
-    
-    // Construct new full list: reordered visible followed by hidden
-    final List<String> newList = [...reorderedVisible];
+
+    final visibleSet = visible.toSet();
+    final reorderedIterator = reorderedVisible.iterator;
+    final newState = <String, Color>{};
+
     for (final cat in all) {
-      if (hidden.contains(cat)) {
-        newList.add(cat);
+      if (visibleSet.contains(cat)) {
+        reorderedIterator.moveNext();
+        final reorderedCat = reorderedIterator.current;
+        newState[reorderedCat] = state[reorderedCat]!;
+      } else {
+        newState[cat] = state[cat]!;
       }
     }
-    
-    final Map<String, Color> newState = {};
-    for (final cat in newList) {
-      newState[cat] = state[cat]!;
-    }
-    
+
     state = newState;
     _save();
   }
