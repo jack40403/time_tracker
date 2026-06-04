@@ -6,6 +6,7 @@ import '../models/goal.dart';
 import '../providers/goal_provider.dart';
 import '../providers/task_goal_provider.dart';
 import '../providers/category_provider.dart';
+import '../helpers/goal_calendar_utils.dart';
 
 class GoalCalendarView extends StatefulWidget {
   final Goal goal;
@@ -104,15 +105,21 @@ class _GoalCalendarViewState extends State<GoalCalendarView> {
                     final val = currentGoal.completionHistory[dateKey] ?? 0;
                     final bool isToday = date.day == now.day && date.month == now.month && date.year == now.year;
                     
+                    final bool isPeriodAchieved = GoalCalendarUtils.isPeriodGoalAchievedOnDate(currentGoal, date);
+                    final bool hasEntry = val > 0;
                     bool isSuccess = false;
-                    if (currentGoal.type == GoalType.binary) {
+                    if (currentGoal.period != GoalPeriod.daily) {
+                      isSuccess = isPeriodAchieved;
+                    } else if (currentGoal.type == GoalType.binary) {
                       isSuccess = val >= 1;
                     } else {
                       isSuccess = val >= currentGoal.targetSeconds;
                     }
 
                     Color cellColor = Colors.grey.withOpacity(0.07);
-                    if (val > 0) {
+                    if (isPeriodAchieved) {
+                      cellColor = Colors.green.withOpacity(0.78);
+                    } else if (val > 0) {
                       if (currentGoal.type == GoalType.time) {
                         cellColor = isSuccess 
                             ? Colors.green.withOpacity((val / currentGoal.targetSeconds).clamp(0.5, 1.0))
@@ -162,7 +169,7 @@ class _GoalCalendarViewState extends State<GoalCalendarView> {
                                         style: GoogleFonts.shareTechMono(
                                           fontSize: currentGoal.type == GoalType.time ? 13 : 18,
                                           fontWeight: FontWeight.bold,
-                                          color: val > 0 ? (currentGoal.type == GoalType.time ? Colors.black87 : Colors.white) : Colors.grey.shade400,
+                                          color: isPeriodAchieved ? Colors.white : (hasEntry ? (currentGoal.type == GoalType.time ? Colors.black87 : Colors.white) : Colors.grey.shade400),
                                         ),
                                       ),
                                     ),

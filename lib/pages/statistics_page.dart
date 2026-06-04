@@ -8,6 +8,7 @@ import '../models/goal.dart';
 import '../providers/session_provider.dart';
 import '../providers/task_goal_provider.dart';
 import '../providers/category_provider.dart';
+import '../helpers/goal_calendar_utils.dart';
 import '../providers/timer_provider.dart';
 import '../providers/ui_providers.dart';
 import '../widgets/bar_chart_demo.dart';
@@ -604,7 +605,8 @@ class _BinaryGoalCalendarCardState extends ConsumerState<_BinaryGoalCalendarCard
       final day = index + 1;
       final date = DateTime(_viewMonth.year, _viewMonth.month, day);
       final val = currentGoal.completionHistory[_dateKey(date)] ?? 0;
-      return val > 0 ? 1 : 0;
+      final isPeriodAchieved = GoalCalendarUtils.isPeriodGoalAchievedOnDate(currentGoal, date);
+      return isPeriodAchieved ? 1 : (val > 0 ? 1 : 0);
     }).fold<int>(0, (sum, val) => sum + val);
 
     return Container(
@@ -712,18 +714,18 @@ class _BinaryGoalCalendarCardState extends ConsumerState<_BinaryGoalCalendarCard
 
               final dayNum = dayIndex + 1;
               final date = DateTime(_viewMonth.year, _viewMonth.month, dayNum);
-              final dateStr = _dateKey(date);
-              final isCompleted = (currentGoal.completionHistory[dateStr] ?? 0) > 0;
+              final isCompleted = GoalCalendarUtils.hasDailyEntry(currentGoal, date);
+              final isPeriodAchieved = GoalCalendarUtils.isPeriodGoalAchievedOnDate(currentGoal, date);
               final isToday = date.year == now.year && date.month == now.month && date.day == now.day;
 
               return Container(
                 decoration: BoxDecoration(
-                  color: isCompleted
+                  color: isPeriodAchieved
                       ? Colors.green.withOpacity(0.88)
-                      : Colors.red.withOpacity(0.16),
+                      : (isCompleted ? widget.categoryColor.withOpacity(0.9) : Colors.red.withOpacity(0.16)),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: isCompleted ? Colors.green.shade700 : Colors.red.shade600,
+                    color: isPeriodAchieved ? Colors.green.shade700 : (isCompleted ? widget.categoryColor : Colors.red.shade600),
                     width: isToday ? 2.5 : 1.6,
                   ),
                 ),
@@ -737,15 +739,15 @@ class _BinaryGoalCalendarCardState extends ConsumerState<_BinaryGoalCalendarCard
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
-                          color: isCompleted ? Colors.white.withOpacity(0.75) : Colors.grey.shade600,
+                          color: isPeriodAchieved ? Colors.white.withOpacity(0.8) : (isCompleted ? Colors.white.withOpacity(0.75) : Colors.grey.shade600),
                         ),
                       ),
                     ),
                     Center(
                       child: Icon(
-                        isCompleted ? Icons.check_rounded : Icons.close_rounded,
+                        isPeriodAchieved ? Icons.check_rounded : Icons.close_rounded,
                         size: 22,
-                        color: isCompleted ? Colors.green.shade900 : Colors.red.shade700,
+                        color: isPeriodAchieved ? Colors.white : (isCompleted ? Colors.white : Colors.red.shade700),
                       ),
                     ),
                   ],

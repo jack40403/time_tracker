@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/goal.dart';
 import '../providers/goal_provider.dart';
 import '../providers/task_goal_provider.dart';
+import '../helpers/goal_calendar_utils.dart';
 
 class GoalCalendarDialog extends ConsumerWidget {
   final Goal goal;
@@ -80,8 +81,9 @@ class GoalCalendarDialog extends ConsumerWidget {
 
                   final dayNum = dayIndex + 1;
                   final date = DateTime(now.year, now.month, dayNum);
-                  final dateStr = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-                  final isCompleted = (goal.completionHistory[dateStr] ?? 0) > 0;
+                  final dateStr = GoalCalendarUtils.dateKey(date);
+                  final isCompleted = GoalCalendarUtils.hasDailyEntry(goal, date);
+                  final isPeriodAchieved = GoalCalendarUtils.isPeriodGoalAchievedOnDate(goal, date);
                   final isToday = dayNum == now.day;
 
                   return GestureDetector(
@@ -92,7 +94,7 @@ class GoalCalendarDialog extends ConsumerWidget {
                           },
                     child: Container(
                       decoration: BoxDecoration(
-                        color: isCompleted ? categoryColor.withOpacity(0.9) : (isToday ? categoryColor.withOpacity(0.1) : Colors.grey.shade100),
+                        color: isPeriodAchieved ? Colors.green.withOpacity(0.9) : (isCompleted ? categoryColor.withOpacity(0.9) : (isToday ? categoryColor.withOpacity(0.1) : Colors.grey.shade100)),
                         borderRadius: BorderRadius.circular(10),
                         border: isToday ? Border.all(color: categoryColor, width: 2) : null,
                       ),
@@ -103,14 +105,14 @@ class GoalCalendarDialog extends ConsumerWidget {
                             Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Text(
-                                  dayNum.toString(),
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: (isToday || isCompleted) ? FontWeight.bold : FontWeight.normal,
-                                    color: isCompleted ? Colors.white.withOpacity(0.7) : (isToday ? categoryColor : Colors.black38),
+                                  Text(
+                                    dayNum.toString(),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: (isToday || isCompleted) ? FontWeight.bold : FontWeight.normal,
+                                      color: isPeriodAchieved ? Colors.white.withOpacity(0.75) : (isCompleted ? Colors.white.withOpacity(0.7) : (isToday ? categoryColor : Colors.black38)),
+                                    ),
                                   ),
-                                ),
                                 if (isCompleted) ...[
                                   if (goal.type == GoalType.binary)
                                     const Padding(

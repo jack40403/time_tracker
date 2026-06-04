@@ -8,6 +8,7 @@ import '../providers/session_provider.dart';
 import '../providers/goal_provider.dart';
 import '../providers/task_goal_provider.dart';
 import '../providers/category_provider.dart';
+import '../helpers/goal_calendar_utils.dart';
 import '../providers/ui_providers.dart';
 import '../widgets/day_timeline_chart.dart';
 import '../widgets/elite_date_range_picker.dart';
@@ -786,13 +787,16 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                       ...datesToShow.map((d) {
                         final key = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
                         final val = g.completionHistory[key] ?? 0;
-                        final bool isSuccess = g.type == GoalType.binary ? val >= 1 : val >= g.targetSeconds;
+                        final bool periodAchieved = GoalCalendarUtils.isPeriodGoalAchievedOnDate(g, d);
+                        final bool isSuccess = g.period == GoalPeriod.daily
+                            ? (g.type == GoalType.binary ? val >= 1 : val >= g.targetSeconds)
+                            : periodAchieved;
                         return Container(
                           width: filter == 'weekly' ? 30 : 12,
                           height: 12,
                           margin: const EdgeInsets.symmetric(horizontal: 1),
                           decoration: BoxDecoration(
-                            color: val == 0 ? Colors.grey.withOpacity(0.1) : (isSuccess ? Colors.green.withOpacity(0.7) : Colors.red.withOpacity(0.5)),
+                            color: periodAchieved ? Colors.green.withOpacity(0.72) : (val == 0 ? Colors.grey.withOpacity(0.1) : (isSuccess ? Colors.green.withOpacity(0.7) : Colors.red.withOpacity(0.5))),
                             borderRadius: BorderRadius.circular(2),
                           ),
                         );
@@ -844,12 +848,15 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                 final date = datesToShow[idx - leadingSpaces];
                 final key = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
                 final val = g.completionHistory[key] ?? 0;
-                final isSuccess = g.type == GoalType.binary ? val >= 1 : val >= g.targetSeconds;
+                final bool periodAchieved = GoalCalendarUtils.isPeriodGoalAchievedOnDate(g, date);
+                final isSuccess = g.period == GoalPeriod.daily
+                    ? (g.type == GoalType.binary ? val >= 1 : val >= g.targetSeconds)
+                    : periodAchieved;
                 final isToday = date.year == now.year && date.month == now.month && date.day == now.day;
                 
                 return Container(
                   decoration: BoxDecoration(
-                    color: val == 0 ? Colors.grey.withOpacity(0.04) : (isSuccess ? Colors.green.withOpacity(0.7) : Colors.red.withOpacity(0.5)),
+                    color: periodAchieved ? Colors.green.withOpacity(0.72) : (val == 0 ? Colors.grey.withOpacity(0.04) : (isSuccess ? Colors.green.withOpacity(0.7) : Colors.red.withOpacity(0.5))),
                     borderRadius: BorderRadius.circular(8),
                     border: (isToday ? Border.all(color: color, width: 2.5) : Border.all(color: Colors.black.withOpacity(0.05))) as BoxBorder,
                     boxShadow: val > 0 ? [BoxShadow(color: (isSuccess ? Colors.green : Colors.red).withOpacity(0.1), blurRadius: 4, offset: const Offset(0, 2))] : null,
