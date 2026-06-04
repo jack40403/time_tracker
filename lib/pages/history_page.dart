@@ -33,7 +33,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   }
 
   void _showManualAddDialog() {
-    final visibleCategories = ref.read(visibleCategoriesProvider);
+    final visibleCategories = ref.read(historyVisibleCategoriesProvider);
     final catColors = ref.read(categoryColorProvider);
     if (visibleCategories.isEmpty) return;
 
@@ -244,7 +244,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   Widget build(BuildContext context) {
     final allSessions = ref.watch(sessionsProvider);
     final catColors = ref.watch(categoryColorProvider);
-    final visibleCats = ref.watch(visibleCategoriesProvider);
+    final visibleCats = ref.watch(historyVisibleCategoriesProvider);
     final filter = ref.watch(historyFilterProvider);
     final offset = ref.watch(historyOffsetProvider);
     final customRange = ref.watch(historyCustomRangeProvider);
@@ -253,11 +253,18 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     final categoryFilter = ref.watch(historyCategoryFilterProvider);
 
     var filteredSessions = FilterUtils.getFilteredSessions(allSessions, filter, offset, customRange);
-    
-    // Apply category filter
-    if (categoryFilter != null) {
-      filteredSessions = filteredSessions.where((s) => s.category == categoryFilter).toList();
+
+    final visibleSet = visibleCats.toSet();
+    final effectiveCategoryFilter = categoryFilter != null && visibleSet.contains(categoryFilter)
+        ? categoryFilter
+        : null;
+
+    // Apply category filter only when the selected category is still visible here.
+    if (effectiveCategoryFilter != null) {
+      filteredSessions = filteredSessions.where((s) => s.category == effectiveCategoryFilter).toList();
     }
+
+    filteredSessions = filteredSessions.where((s) => visibleSet.contains(s.category)).toList();
 
     final Map<String, List<dynamic>> grouped = {};
     for (var s in filteredSessions) {
@@ -365,8 +372,8 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                _buildCategoryChip(null, '全部', categoryFilter == null, ref),
-                ...visibleCats.map((cat) => _buildCategoryChip(cat, cat, categoryFilter == cat, ref)),
+                _buildCategoryChip(null, '全部', effectiveCategoryFilter == null, ref),
+                ...visibleCats.map((cat) => _buildCategoryChip(cat, cat, effectiveCategoryFilter == cat, ref)),
               ],
             ),
           ),
@@ -397,7 +404,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                 ),
                 if (_showHeatmap) ...[
                   const SizedBox(height: 8),
-                  _buildGoalHeatmapSection(ref, filter, offset, customRange, goals, taskGoals, catColors, categoryFilter),
+                _buildGoalHeatmapSection(ref, filter, offset, customRange, goals, taskGoals, catColors, effectiveCategoryFilter),
                 ],
               ],
             ),

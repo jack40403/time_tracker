@@ -23,26 +23,44 @@ class StatisticsPage extends ConsumerWidget {
 
   Widget _buildFilterChip(String value, String label, String currentFilter, WidgetRef ref, BuildContext context) {
     final isSelected = currentFilter == value;
-    return ChoiceChip(
-      label: Text(label, style: TextStyle(fontSize: ResponsiveHelper.sp(context, 14), fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
-      selected: isSelected,
-      showCheckmark: false,
-      onSelected: (val) async {
-        if (val) {
-          ref.read(statsFilterProvider.notifier).setFilter(value);
-          if (value == 'custom') {
-            final range = await EliteDateRangePicker.show(
-              context,
-              initialDateRange: ref.read(statsCustomRangeProvider),
-              firstDate: DateTime(2000),
-              lastDate: DateTime.now().add(const Duration(days: 1)),
-            );
-            if (range != null) {
-              ref.read(statsCustomRangeProvider.notifier).setRange(range);
+    return SizedBox(
+      width: value == 'custom' ? 104 : 72,
+      child: ChoiceChip(
+        label: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            label,
+            maxLines: 1,
+            softWrap: false,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: ResponsiveHelper.sp(context, 14),
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ),
+        selected: isSelected,
+        showCheckmark: false,
+        labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+        onSelected: (val) async {
+          if (val) {
+            ref.read(statsFilterProvider.notifier).setFilter(value);
+            if (value == 'custom') {
+              final range = await EliteDateRangePicker.show(
+                context,
+                initialDateRange: ref.read(statsCustomRangeProvider),
+                firstDate: DateTime(2000),
+                lastDate: DateTime.now().add(const Duration(days: 1)),
+              );
+              if (range != null) {
+                ref.read(statsCustomRangeProvider.notifier).setRange(range);
+              }
             }
           }
-        }
-      },
+        },
+      ),
     );
   }
 
@@ -54,19 +72,24 @@ class StatisticsPage extends ConsumerWidget {
     final offset = ref.watch(statsOffsetProvider);
     final customRange = ref.watch(statsCustomRangeProvider);
     final catColors = ref.watch(categoryColorProvider);
-    final visibleCats = ref.watch(visibleCategoriesProvider);
+    final visibleCats = ref.watch(statsVisibleCategoriesProvider);
     final categoryFilter = ref.watch(statsCategoryFilterProvider);
     final taskGoals = ref.watch(taskGoalProvider);
     
     var filteredSessions = FilterUtils.getFilteredSessions(allSessions, filter, offset, customRange);
+    final visibleSet = visibleCats.toSet();
+    final effectiveCategoryFilter = categoryFilter != null && visibleSet.contains(categoryFilter)
+        ? categoryFilter
+        : null;
 
     // Calculate total for percentage before filtering for specific category
     final globalTotalTotal = filteredSessions.fold(0, (sum, s) => sum + s.durationSeconds);
 
     // Apply category filter
-    if (categoryFilter != null) {
-      filteredSessions = filteredSessions.where((s) => s.category == categoryFilter).toList();
+    if (effectiveCategoryFilter != null) {
+      filteredSessions = filteredSessions.where((s) => s.category == effectiveCategoryFilter).toList();
     }
+    filteredSessions = filteredSessions.where((s) => visibleSet.contains(s.category)).toList();
     final Map<String, int> categoryTotals = {};
     for (var s in filteredSessions) {
       categoryTotals[s.category] = (categoryTotals[s.category] ?? 0) + s.durationSeconds;
@@ -81,9 +104,9 @@ class StatisticsPage extends ConsumerWidget {
     }
 
     final totalSeconds = categoryTotals.values.fold(0, (sum, val) => sum + val);
-    final Goal? binaryGoal = categoryFilter == null
+    final Goal? binaryGoal = effectiveCategoryFilter == null
         ? null
-        : _findBinaryGoal(taskGoals, categoryFilter);
+        : _findBinaryGoal(taskGoals, effectiveCategoryFilter);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -109,14 +132,17 @@ class StatisticsPage extends ConsumerWidget {
             // Filter Chips
             Center(
               child: Container(
+                constraints: const BoxConstraints(maxWidth: 520),
                 decoration: BoxDecoration(
                   color: t.surface.withOpacity(0.18),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: t.ink.withOpacity(0.2), width: 2),
                 ),
                 padding: const EdgeInsets.all(4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 6,
+                  runSpacing: 6,
                   children: [
                     _buildFilterChip('daily', '日', filter, ref, context),
                     _buildFilterChip('weekly', '週', filter, ref, context),
@@ -135,8 +161,8 @@ class StatisticsPage extends ConsumerWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildCategoryChip(null, '全部', categoryFilter == null, ref, context),
-                    ...visibleCats.map((cat) => _buildCategoryChip(cat, cat, categoryFilter == cat, ref, context)),
+                    _buildCategoryChip(null, '全部', effectiveCategoryFilter == null, ref, context),
+                    ...visibleCats.map((cat) => _buildCategoryChip(cat, cat, effectiveCategoryFilter == cat, ref, context)),
                   ],
                 ),
               ),
@@ -197,31 +223,31 @@ class StatisticsPage extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 20),
-            if (categoryFilter != null && binaryGoal != null)
+            if (effectiveCategoryFilter != null && binaryGoal != null)
               _BinaryGoalCalendarCard(
                 goal: binaryGoal,
-                categoryColor: catColors[categoryFilter] ?? Theme.of(context).colorScheme.primary,
+                categoryColor: catColors[effectiveCategoryFilter] ?? Theme.of(context).colorScheme.primary,
               )
             else if (totalSeconds == 0)
               Center(child: Padding(padding: const EdgeInsets.all(40), child: Text('此區段無紀錄', style: TextStyle(color: Colors.grey.shade400))))
-            else if (categoryFilter != null)
+            else if (effectiveCategoryFilter != null)
               // Specific category focus view
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: (catColors[categoryFilter] ?? Colors.blue).withOpacity(0.1),
+                  color: (catColors[effectiveCategoryFilter] ?? Colors.blue).withOpacity(0.1),
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: (catColors[categoryFilter] ?? Colors.blue).withOpacity(0.2)),
+                  border: Border.all(color: (catColors[effectiveCategoryFilter] ?? Colors.blue).withOpacity(0.2)),
                 ),
                 child: Column(
                   children: [
                     Text(
-                      categoryFilter,
+                      effectiveCategoryFilter,
                       style: GoogleFonts.outfit(
                         fontSize: ResponsiveHelper.sp(context, 24),
                         fontWeight: FontWeight.bold,
-                        color: catColors[categoryFilter],
+                        color: catColors[effectiveCategoryFilter],
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -380,7 +406,7 @@ class StatisticsPage extends ConsumerWidget {
                 border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
               ),
               child: () {
-                final top5Colors = categoryFilter != null
+                final top5Colors = effectiveCategoryFilter != null
                     ? catColors
                     : Map.fromEntries(
                         (categoryTotals.entries.toList()
@@ -396,11 +422,11 @@ class StatisticsPage extends ConsumerWidget {
                   filter: filter,
                   offset: offset,
                   catColors: top5Colors,
-                  categoryFilter: categoryFilter,
+                  categoryFilter: effectiveCategoryFilter,
                 );
               }(),
             ),
-            if (categoryFilter == null && categoryTotals.isNotEmpty) ...[
+            if (effectiveCategoryFilter == null && categoryTotals.isNotEmpty) ...[
               const SizedBox(height: 12),
               Wrap(
                 spacing: 16,
@@ -452,7 +478,7 @@ class StatisticsPage extends ConsumerWidget {
                       ),
                     );
 
-                    if (categoryFilter == e.key) {
+                    if (effectiveCategoryFilter == e.key) {
                       Navigator.push(context, MaterialPageRoute(builder: (_) => CategoryDetailPage(category: e.key)));
                     } else {
                       ref.read(statsCategoryFilterProvider.notifier).setCategory(e.key);
@@ -696,7 +722,10 @@ class _BinaryGoalCalendarCardState extends ConsumerState<_BinaryGoalCalendarCard
                       ? Colors.green.withOpacity(0.88)
                       : Colors.red.withOpacity(0.16),
                   borderRadius: BorderRadius.circular(10),
-                  border: isToday ? Border.all(color: widget.categoryColor, width: 2) : null,
+                  border: Border.all(
+                    color: isCompleted ? Colors.green.shade700 : Colors.red.shade600,
+                    width: isToday ? 2.5 : 1.6,
+                  ),
                 ),
                 child: Stack(
                   children: [
@@ -715,8 +744,8 @@ class _BinaryGoalCalendarCardState extends ConsumerState<_BinaryGoalCalendarCard
                     Center(
                       child: Icon(
                         isCompleted ? Icons.check_rounded : Icons.close_rounded,
-                        size: 20,
-                        color: isCompleted ? Colors.white : Colors.redAccent,
+                        size: 22,
+                        color: isCompleted ? Colors.green.shade900 : Colors.red.shade700,
                       ),
                     ),
                   ],

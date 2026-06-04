@@ -13,6 +13,8 @@ class DebugHelper {
     'timer_state_v2',
     'app_layout_mode',
     'hidden_categories',
+    'stats_hidden_categories',
+    'history_hidden_categories',
     'last_updated_at',
     'time_tracker_goals',
   ];

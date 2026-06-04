@@ -9,7 +9,6 @@ import '../providers/task_goal_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/goal_order_provider.dart';
-import '../services/storage_service.dart';
 import '../providers/storage_provider.dart';
 
 class BackupService {
@@ -27,6 +26,8 @@ class BackupService {
     final hiddenCategories = ref.read(hiddenCategoriesProvider);
     final timerHidden = ref.read(timerHiddenCategoriesProvider);
     final goalsHidden = ref.read(goalsHiddenCategoriesProvider);
+    final statsHidden = ref.read(statsHiddenCategoriesProvider);
+    final historyHidden = ref.read(historyHiddenCategoriesProvider);
 
     final backup = {
       'version': 1,
@@ -41,6 +42,8 @@ class BackupService {
         'hidden_categories': hiddenCategories.toList(),
         'timer_hidden_categories': timerHidden.toList(),
         'goals_hidden_categories': goalsHidden.toList(),
+        'stats_hidden_categories': statsHidden.toList(),
+        'history_hidden_categories': historyHidden.toList(),
       }
     };
 
@@ -113,6 +116,16 @@ class BackupService {
           final hidden = (payload['goals_hidden_categories'] as List).cast<String>().toSet();
           ref.read(goalsHiddenCategoriesProvider.notifier).state = hidden;
           ref.read(storageServiceProvider).prefs.setStringList('goals_hidden_categories', hidden.toList());
+      }
+      if (payload.containsKey('stats_hidden_categories')) {
+          final hidden = (payload['stats_hidden_categories'] as List).cast<String>().toSet();
+          ref.read(statsHiddenCategoriesProvider.notifier).state = hidden;
+          ref.read(storageServiceProvider).saveStatsHiddenCategories(hidden.toList());
+      }
+      if (payload.containsKey('history_hidden_categories')) {
+          final hidden = (payload['history_hidden_categories'] as List).cast<String>().toSet();
+          ref.read(historyHiddenCategoriesProvider.notifier).state = hidden;
+          ref.read(storageServiceProvider).saveHistoryHiddenCategories(hidden.toList());
       }
 
       return true;

@@ -117,6 +117,9 @@ class CategoryColorNotifier extends Notifier<Map<String, Color>> {
       // Preserve hidden status during rename
       final isGlobalHidden = ref.read(hiddenCategoriesProvider).contains(oldCat);
       final isTimerHidden = ref.read(timerHiddenCategoriesProvider).contains(oldCat);
+      final isGoalsHidden = ref.read(goalsHiddenCategoriesProvider).contains(oldCat);
+      final isStatsHidden = ref.read(statsHiddenCategoriesProvider).contains(oldCat);
+      final isHistoryHidden = ref.read(historyHiddenCategoriesProvider).contains(oldCat);
 
       if (isGlobalHidden) {
         ref.read(hiddenCategoriesProvider.notifier).hideCategory(newCat);
@@ -125,6 +128,18 @@ class CategoryColorNotifier extends Notifier<Map<String, Color>> {
       if (isTimerHidden) {
         ref.read(timerHiddenCategoriesProvider.notifier).hideCategory(newCat);
         ref.read(timerHiddenCategoriesProvider.notifier).unhideCategory(oldCat);
+      }
+      if (isGoalsHidden) {
+        ref.read(goalsHiddenCategoriesProvider.notifier).hideCategory(newCat);
+        ref.read(goalsHiddenCategoriesProvider.notifier).unhideCategory(oldCat);
+      }
+      if (isStatsHidden) {
+        ref.read(statsHiddenCategoriesProvider.notifier).hideCategory(newCat);
+        ref.read(statsHiddenCategoriesProvider.notifier).unhideCategory(oldCat);
+      }
+      if (isHistoryHidden) {
+        ref.read(historyHiddenCategoriesProvider.notifier).hideCategory(newCat);
+        ref.read(historyHiddenCategoriesProvider.notifier).unhideCategory(oldCat);
       }
       
       state = orderedState;
@@ -443,6 +458,108 @@ class GoalsHiddenCategoriesNotifier extends Notifier<Set<String>> {
   }
 }
 
+class StatsHiddenCategoriesNotifier extends Notifier<Set<String>> {
+  @override
+  Set<String> build() {
+    final storage = ref.watch(storageServiceProvider);
+    final initial = storage.loadStatsHiddenCategories().toSet();
+
+    ref.listen(cloudSettingsProvider, (previous, next) {
+      final cloudSettings = next.value;
+      if (cloudSettings != null && cloudSettings.containsKey('stats_hidden_categories')) {
+        final cloudHidden = (cloudSettings['stats_hidden_categories'] as List).cast<String>().toSet();
+        if (cloudHidden.length != state.length || !cloudHidden.every(state.contains)) {
+          state = cloudHidden;
+          storage.saveStatsHiddenCategories(state.toList());
+        }
+      }
+    });
+
+    return initial;
+  }
+
+  void hideCategory(String category) {
+    if (!state.contains(category)) {
+      state = {...state, category};
+      _save();
+    }
+  }
+
+  void unhideCategory(String category) {
+    if (state.contains(category)) {
+      final newState = Set<String>.from(state);
+      newState.remove(category);
+      state = newState;
+      _save();
+    }
+  }
+
+  void resetState() {
+    state = {};
+  }
+
+  void _save() {
+    final storage = ref.read(storageServiceProvider);
+    storage.saveStatsHiddenCategories(state.toList());
+
+    final firestore = ref.read(firestoreServiceProvider);
+    if (firestore != null) {
+      firestore.updateSettings({'stats_hidden_categories': state.toList()});
+    }
+  }
+}
+
+class HistoryHiddenCategoriesNotifier extends Notifier<Set<String>> {
+  @override
+  Set<String> build() {
+    final storage = ref.watch(storageServiceProvider);
+    final initial = storage.loadHistoryHiddenCategories().toSet();
+
+    ref.listen(cloudSettingsProvider, (previous, next) {
+      final cloudSettings = next.value;
+      if (cloudSettings != null && cloudSettings.containsKey('history_hidden_categories')) {
+        final cloudHidden = (cloudSettings['history_hidden_categories'] as List).cast<String>().toSet();
+        if (cloudHidden.length != state.length || !cloudHidden.every(state.contains)) {
+          state = cloudHidden;
+          storage.saveHistoryHiddenCategories(state.toList());
+        }
+      }
+    });
+
+    return initial;
+  }
+
+  void hideCategory(String category) {
+    if (!state.contains(category)) {
+      state = {...state, category};
+      _save();
+    }
+  }
+
+  void unhideCategory(String category) {
+    if (state.contains(category)) {
+      final newState = Set<String>.from(state);
+      newState.remove(category);
+      state = newState;
+      _save();
+    }
+  }
+
+  void resetState() {
+    state = {};
+  }
+
+  void _save() {
+    final storage = ref.read(storageServiceProvider);
+    storage.saveHistoryHiddenCategories(state.toList());
+
+    final firestore = ref.read(firestoreServiceProvider);
+    if (firestore != null) {
+      firestore.updateSettings({'history_hidden_categories': state.toList()});
+    }
+  }
+}
+
 final categoryColorProvider = NotifierProvider<CategoryColorNotifier, Map<String, Color>>(
   () => CategoryColorNotifier(),
 );
@@ -457,6 +574,14 @@ final timerHiddenCategoriesProvider = NotifierProvider<TimerHiddenCategoriesNoti
 
 final goalsHiddenCategoriesProvider = NotifierProvider<GoalsHiddenCategoriesNotifier, Set<String>>(
   () => GoalsHiddenCategoriesNotifier(),
+);
+
+final statsHiddenCategoriesProvider = NotifierProvider<StatsHiddenCategoriesNotifier, Set<String>>(
+  () => StatsHiddenCategoriesNotifier(),
+);
+
+final historyHiddenCategoriesProvider = NotifierProvider<HistoryHiddenCategoriesNotifier, Set<String>>(
+  () => HistoryHiddenCategoriesNotifier(),
 );
 
 // Global Visibility (used for History, Charts, etc.)
@@ -478,4 +603,18 @@ final goalsVisibleCategoriesProvider = Provider<List<String>>((ref) {
   final globalVisible = ref.watch(visibleCategoriesProvider);
   final goalsHidden = ref.watch(goalsHiddenCategoriesProvider);
   return globalVisible.where((c) => !goalsHidden.contains(c)).toList();
+});
+
+// Statistics-specific Visibility
+final statsVisibleCategoriesProvider = Provider<List<String>>((ref) {
+  final globalVisible = ref.watch(visibleCategoriesProvider);
+  final statsHidden = ref.watch(statsHiddenCategoriesProvider);
+  return globalVisible.where((c) => !statsHidden.contains(c)).toList();
+});
+
+// History-specific Visibility
+final historyVisibleCategoriesProvider = Provider<List<String>>((ref) {
+  final globalVisible = ref.watch(visibleCategoriesProvider);
+  final historyHidden = ref.watch(historyHiddenCategoriesProvider);
+  return globalVisible.where((c) => !historyHidden.contains(c)).toList();
 });

@@ -70,6 +70,7 @@ class TimerState {
   final DateTime? startTime;
   final int baseSeconds;
   final DateTime? lastSyncTime;
+  final DateTime? sessionStartTime;
 
   const TimerState({
     this.isRunning = false,
@@ -77,6 +78,7 @@ class TimerState {
     this.startTime,
     this.baseSeconds = 0,
     this.lastSyncTime,
+    this.sessionStartTime,
   });
 
   int get currentElapsed {
@@ -91,6 +93,7 @@ class TimerState {
     DateTime? startTime,
     int? baseSeconds,
     DateTime? lastSyncTime,
+    DateTime? sessionStartTime,
   }) {
     return TimerState(
       isRunning: isRunning ?? this.isRunning,
@@ -98,6 +101,7 @@ class TimerState {
       startTime: startTime ?? this.startTime,
       baseSeconds: baseSeconds ?? this.baseSeconds,
       lastSyncTime: lastSyncTime ?? this.lastSyncTime,
+      sessionStartTime: sessionStartTime ?? this.sessionStartTime,
     );
   }
 
@@ -107,6 +111,7 @@ class TimerState {
         'startTime': startTime?.toUtc().toIso8601String(),
         'baseSeconds': baseSeconds,
         'lastSyncTime': lastSyncTime?.toUtc().toIso8601String(),
+        'sessionStartTime': sessionStartTime?.toUtc().toIso8601String(),
       };
 
   factory TimerState.fromJson(Map<String, dynamic> json) => TimerState(
@@ -115,6 +120,9 @@ class TimerState {
         startTime: json['startTime'] != null ? DateTime.parse(json['startTime']).toUtc() : null,
         baseSeconds: json['baseSeconds'] ?? 0,
         lastSyncTime: json['lastSyncTime'] != null ? DateTime.parse(json['lastSyncTime']).toUtc() : null,
+        sessionStartTime: json['sessionStartTime'] != null
+            ? DateTime.parse(json['sessionStartTime']).toUtc()
+            : (json['startTime'] != null ? DateTime.parse(json['startTime']).toUtc() : null),
       );
 }
 
@@ -218,24 +226,12 @@ class TimerNotifier extends Notifier<TimerState> {
                 isRunning: true, 
                 startTime: DateTime.now().toUtc().subtract(Duration(seconds: remoteSeconds)),
                 baseSeconds: 0,
+                sessionStartTime: state.sessionStartTime ?? DateTime.now().toUtc().subtract(Duration(seconds: remoteSeconds)),
               );
               _startTicker();
             } else {
               if (_isFinalizingStop) return;
               _timer?.cancel();
-
-              final snapshot = state;
-              if (snapshot.isRunning && snapshot.startTime != null) {
-                final delta = DateTime.now().toUtc().difference(snapshot.startTime!).inSeconds;
-                if (delta > 0) {
-                  final session = TimeSession(
-                    category: snapshot.category,
-                    durationSeconds: delta,
-                    date: snapshot.startTime!.toLocal(),
-                  );
-                  ref.read(sessionsProvider.notifier).addSession(session);
-                }
-              }
 
               state = state.copyWith(isRunning: false, baseSeconds: remoteSeconds, startTime: null);
             }
@@ -404,20 +400,6 @@ class TimerNotifier extends Notifier<TimerState> {
       final snapshot = state;
       _timer?.cancel();
       
-      final delta = snapshot.startTime != null 
-          ? DateTime.now().toUtc().difference(snapshot.startTime!).inSeconds 
-          : 0;
-          
-      // AUTO-SPLIT: Save current segment as a session immediately
-      if (snapshot.startTime != null && delta > 0) {
-        final session = TimeSession(
-          category: snapshot.category,
-          durationSeconds: delta,
-          date: snapshot.startTime!.toLocal(),
-        );
-        ref.read(sessionsProvider.notifier).addSession(session);
-      }
-
       final totalElapsed = snapshot.currentElapsed;
       state = snapshot.copyWith(isRunning: false, baseSeconds: totalElapsed, startTime: null);
       if (kIsWeb) {
@@ -425,7 +407,12 @@ class TimerNotifier extends Notifier<TimerState> {
         MediaSessionService.updateMetadata(snapshot.category, '00:00');
       }
     } else {
-      state = state.copyWith(isRunning: true, startTime: DateTime.now().toUtc());
+      final nowUtc = DateTime.now().toUtc();
+      state = state.copyWith(
+        isRunning: true,
+        startTime: nowUtc,
+        sessionStartTime: state.sessionStartTime ?? nowUtc,
+      );
       if (!kIsWeb) {
         try {
           FlutterBackgroundService().startService();
@@ -452,17 +439,16 @@ class TimerNotifier extends Notifier<TimerState> {
     }
     
     try {
-      if (snapshot.isRunning && snapshot.startTime != null) {
-        final delta = DateTime.now().toUtc().difference(snapshot.startTime!).inSeconds;
-        if (delta > 0) {
-          final session = TimeSession(
-            category: snapshot.category,
-            durationSeconds: delta,
-            date: snapshot.startTime!.toLocal(),
-            note: note,
-          );
-          ref.read(sessionsProvider.notifier).addSession(session);
-        }
+      final duration = snapshot.currentElapsed;
+      if (duration > 0) {
+        final sessionStart = snapshot.sessionStartTime ?? snapshot.startTime ?? DateTime.now().toUtc().subtract(Duration(seconds: duration));
+        final session = TimeSession(
+          category: snapshot.category,
+          durationSeconds: duration,
+          date: sessionStart.toLocal(),
+          note: note,
+        );
+        ref.read(sessionsProvider.notifier).addSession(session);
       }
       if (kIsWeb) {
         MediaSessionService.setPlaybackState(false);

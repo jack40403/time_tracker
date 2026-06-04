@@ -239,6 +239,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               await ref.read(sessionsProvider.notifier).clearAll();
               ref.read(categoryColorProvider.notifier).resetState();
               ref.read(hiddenCategoriesProvider.notifier).resetState();
+              ref.read(statsHiddenCategoriesProvider.notifier).resetState();
+              ref.read(historyHiddenCategoriesProvider.notifier).resetState();
               ref.read(goalProvider.notifier).resetState();
               ref.read(timerProvider.notifier).resetState();
               ref.read(timerColorProvider.notifier).resetToDefault();
@@ -354,6 +356,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final authUser = ref.watch(authStateProvider).value;
     final catColors = ref.watch(categoryColorProvider);
     final hiddenCategories = ref.watch(hiddenCategoriesProvider);
+    final statsHiddenCategories = ref.watch(statsHiddenCategoriesProvider);
+    final historyHiddenCategories = ref.watch(historyHiddenCategoriesProvider);
     final timerColor = ref.watch(timerColorProvider);
     final visibleEntries = catColors.entries.where((e) => !hiddenCategories.contains(e.key)).toList();
 
@@ -945,6 +949,133 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
             child: Text('系統與偏好', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.grey)),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
+            child: Text(
+              '頁面顯示設定',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+              ),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '項目',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 76,
+                          child: Center(
+                            child: Text(
+                              '統計',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 76,
+                          child: Center(
+                            child: Text(
+                              '歷史',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  for (final entry in catColors.entries)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 12,
+                            height: 12,
+                            margin: const EdgeInsets.only(right: 10),
+                            decoration: BoxDecoration(
+                              color: entry.value,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              entry.key,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 76,
+                            child: Center(
+                              child: Switch.adaptive(
+                                value: !statsHiddenCategories.contains(entry.key),
+                                onChanged: (show) {
+                                  final notifier = ref.read(statsHiddenCategoriesProvider.notifier);
+                                  if (show) {
+                                    notifier.unhideCategory(entry.key);
+                                  } else {
+                                    notifier.hideCategory(entry.key);
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 76,
+                            child: Center(
+                              child: Switch.adaptive(
+                                value: !historyHiddenCategories.contains(entry.key),
+                                onChanged: (show) {
+                                  final notifier = ref.read(historyHiddenCategoriesProvider.notifier);
+                                  if (show) {
+                                    notifier.unhideCategory(entry.key);
+                                  } else {
+                                    notifier.hideCategory(entry.key);
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (catColors.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(24.0),
+                      child: Text('目前沒有任何項目', style: TextStyle(color: Colors.grey)),
+                    ),
+                ],
+              ),
+            ),
+          ),
+
           SwitchListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 20),
             title: const Text('深色模式'),
@@ -1333,6 +1464,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ref.read(hiddenCategoriesProvider.notifier).resetState();
       ref.read(timerHiddenCategoriesProvider.notifier).resetState();
       ref.read(goalsHiddenCategoriesProvider.notifier).resetState();
+      ref.read(statsHiddenCategoriesProvider.notifier).resetState();
+      ref.read(historyHiddenCategoriesProvider.notifier).resetState();
       ref.read(goalOrderProvider.notifier).resetState();
       ref.read(timerProvider.notifier).resetState();
 
@@ -1386,6 +1519,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ref.read(taskGoalProvider.notifier).resetState();
       ref.read(categoryColorProvider.notifier).resetState();
       ref.read(hiddenCategoriesProvider.notifier).resetState();
+      ref.read(statsHiddenCategoriesProvider.notifier).resetState();
+      ref.read(historyHiddenCategoriesProvider.notifier).resetState();
       ref.read(timerProvider.notifier).resetState();
       ref.read(timerColorProvider.notifier).resetToDefault();
       ref.read(backgroundProvider.notifier).reset();
