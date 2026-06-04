@@ -17,6 +17,33 @@ const defaultCategoryColors = {
 class CategoryColorNotifier extends Notifier<Map<String, Color>> {
   int _lastLocalUpdateTime = 0;
 
+  void _syncFromCloud(Map<String, dynamic> cloudSettings) {
+    bool changed = false;
+
+    final int cloudTime = cloudSettings['last_updated_at'] ?? 0;
+    if (cloudTime <= _lastLocalUpdateTime) return;
+
+    if (cloudSettings.containsKey('category_colors')) {
+      final Map<String, dynamic> cColors = cloudSettings['category_colors'];
+      final Map<String, Color> decoded = cColors.map((k, v) => MapEntry(k, Color(v as int)));
+      if (decoded.toString() != state.toString()) {
+        state = decoded;
+        changed = true;
+      }
+    } else if (cloudSettings.containsKey('last_updated_at')) {
+      // Explicitly empty in cloud but exists
+      if (state.isNotEmpty) {
+        state = {};
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      _lastLocalUpdateTime = cloudTime;
+      _saveLocally();
+    }
+  }
+
   @override
   Map<String, Color> build() {
     final storage = ref.watch(storageServiceProvider);
@@ -29,32 +56,14 @@ class CategoryColorNotifier extends Notifier<Map<String, Color>> {
       ref.listen(cloudSettingsProvider, (previous, next) {
         final cloudSettings = next.value;
         if (cloudSettings != null) {
-          Future.microtask(() {
-            bool changed = false;
-            
-            final int cloudTime = cloudSettings['last_updated_at'] ?? 0;
-            if (cloudTime <= _lastLocalUpdateTime) return; 
+          Future.microtask(() => _syncFromCloud(cloudSettings));
+        }
+      });
 
-            if (cloudSettings.containsKey('category_colors')) {
-              final Map<String, dynamic> cColors = cloudSettings['category_colors'];
-              final Map<String, Color> decoded = cColors.map((k, v) => MapEntry(k, Color(v as int)));
-              if (decoded.toString() != state.toString()) {
-                state = decoded;
-                changed = true;
-              }
-            } else if (cloudSettings.containsKey('last_updated_at')) {
-              // Explicitly empty in cloud but exists
-              if (state.isNotEmpty) {
-                 state = {};
-                 changed = true;
-              }
-            }
-
-            if (changed) {
-              _lastLocalUpdateTime = cloudTime;
-              _saveLocally();
-            }
-          });
+      Future.microtask(() {
+        final current = ref.read(cloudSettingsProvider);
+        if (current.hasValue && current.value != null) {
+          _syncFromCloud(current.value!);
         }
       });
     }

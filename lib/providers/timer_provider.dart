@@ -121,6 +121,7 @@ class TimerState {
 class TimerNotifier extends Notifier<TimerState> {
   Timer? _timer;
   bool _isSyncingFromCloud = false;
+  bool _isFinalizingStop = false;
   DateTime? _lastManualActionTime;
 
   String get debugId {
@@ -145,6 +146,7 @@ class TimerNotifier extends Notifier<TimerState> {
     final storage = ref.watch(storageServiceProvider);
     final localJson = storage.loadTimerState();
     final firestore = ref.watch(firestoreServiceProvider);
+    TimerState? cloudSnapshot;
 
     if (kIsWeb) {
       MediaSessionService.initHandlers(toggleTimer);
@@ -163,14 +165,20 @@ class TimerNotifier extends Notifier<TimerState> {
       Future.microtask(() {
         final current = ref.read(cloudTimerProvider);
         if (current.hasValue && current.value != null) {
-          _syncFromRemote(TimerState.fromJson(current.value!));
+          cloudSnapshot = TimerState.fromJson(current.value!);
+          _syncFromRemote(cloudSnapshot!);
         }
       });
     }
 
     if (localJson != null) {
       final local = TimerState.fromJson(localJson);
-      if (local.isRunning) {
+      final currentCloud = ref.read(cloudTimerProvider);
+      final cloudState = currentCloud.hasValue && currentCloud.value != null
+          ? TimerState.fromJson(currentCloud.value!)
+          : null;
+
+      if (cloudState == null && local.isRunning) {
         // ZOMBIE RECOVERY AGE CHECK: If the start time is too old (e.g. > 12 hours),
         // it's likely a zombie state from a crash. Don't auto-restart.
         bool isTooOld = false;
@@ -188,6 +196,9 @@ class TimerNotifier extends Notifier<TimerState> {
           // Reset state to avoid repeated detection
           Future.microtask(() => resetTimer());
         }
+      } else if (cloudState != null && local.isRunning && !cloudState.isRunning) {
+        debugPrint('TimerNotifier: Cloud is paused; skipping local auto-restart.');
+        _timer?.cancel();
       }
       
       // Ensure initial widget sync
@@ -210,19 +221,20 @@ class TimerNotifier extends Notifier<TimerState> {
               );
               _startTicker();
             } else {
+              if (_isFinalizingStop) return;
               _timer?.cancel();
-              
-              final delta = state.startTime != null 
-                  ? DateTime.now().toUtc().difference(state.startTime!).inSeconds 
-                  : 0;
-                  
-              if (delta > 0) {
-                final session = TimeSession(
-                  category: state.category,
-                  durationSeconds: delta,
-                  date: DateTime.now().toLocal().subtract(Duration(seconds: delta)),
-                );
-                ref.read(sessionsProvider.notifier).addSession(session);
+
+              final snapshot = state;
+              if (snapshot.isRunning && snapshot.startTime != null) {
+                final delta = DateTime.now().toUtc().difference(snapshot.startTime!).inSeconds;
+                if (delta > 0) {
+                  final session = TimeSession(
+                    category: snapshot.category,
+                    durationSeconds: delta,
+                    date: snapshot.startTime!.toLocal(),
+                  );
+                  ref.read(sessionsProvider.notifier).addSession(session);
+                }
               }
 
               state = state.copyWith(isRunning: false, baseSeconds: remoteSeconds, startTime: null);
@@ -235,6 +247,11 @@ class TimerNotifier extends Notifier<TimerState> {
       FlutterBackgroundService().on('stopFromNotification').listen((event) {
         stopAndSave();
       });
+    }
+
+    final currentCloud = ref.read(cloudTimerProvider);
+    if (currentCloud.hasValue && currentCloud.value != null) {
+      return TimerState.fromJson(currentCloud.value!);
     }
 
     if (localJson != null) {
@@ -264,7 +281,11 @@ class TimerNotifier extends Notifier<TimerState> {
       debugPrint('TimerNotifier: Syncing from Cloud...');
       _isSyncingFromCloud = true;
       state = remote;
-      if (remote.isRunning) _startTicker(); else _timer?.cancel();
+      if (remote.isRunning) {
+        _startTicker();
+      } else {
+        _timer?.cancel();
+      }
       _isSyncingFromCloud = false;
     }
   }
@@ -380,34 +401,37 @@ class TimerNotifier extends Notifier<TimerState> {
     HapticFeedback.selectionClick(); // 開始或暫停時的輕微震動
 
     if (state.isRunning) {
+      final snapshot = state;
       _timer?.cancel();
       
-      final delta = state.startTime != null 
-          ? DateTime.now().toUtc().difference(state.startTime!).inSeconds 
+      final delta = snapshot.startTime != null 
+          ? DateTime.now().toUtc().difference(snapshot.startTime!).inSeconds 
           : 0;
           
       // AUTO-SPLIT: Save current segment as a session immediately
-      if (delta > 0) {
+      if (snapshot.startTime != null && delta > 0) {
         final session = TimeSession(
-          category: state.category,
+          category: snapshot.category,
           durationSeconds: delta,
-          date: DateTime.now().toLocal().subtract(Duration(seconds: delta)),
+          date: snapshot.startTime!.toLocal(),
         );
         ref.read(sessionsProvider.notifier).addSession(session);
       }
 
-      final totalElapsed = state.currentElapsed;
-      state = state.copyWith(isRunning: false, baseSeconds: totalElapsed, startTime: null);
+      final totalElapsed = snapshot.currentElapsed;
+      state = snapshot.copyWith(isRunning: false, baseSeconds: totalElapsed, startTime: null);
       if (kIsWeb) {
         MediaSessionService.setPlaybackState(false);
-        MediaSessionService.updateMetadata(state.category, '00:00');
+        MediaSessionService.updateMetadata(snapshot.category, '00:00');
       }
     } else {
       state = state.copyWith(isRunning: true, startTime: DateTime.now().toUtc());
       if (!kIsWeb) {
         try {
           FlutterBackgroundService().startService();
-        } catch (e) {}
+        } catch (e) {
+          debugPrint('TimerNotifier: startService failed: $e');
+        }
       }
       _startTicker();
     }
@@ -418,39 +442,45 @@ class TimerNotifier extends Notifier<TimerState> {
   }
 
   void stopAndSave({String? note}) async {
+    _isFinalizingStop = true;
+    final snapshot = state;
     _timer?.cancel();
     
     // 強效震動兩下
-    if (await Vibration.hasVibrator() ?? false) {
+    if (await Vibration.hasVibrator()) {
       Vibration.vibrate(pattern: [0, 300, 200, 300]);
     }
     
-    final delta = state.isRunning && state.startTime != null
-          ? DateTime.now().toUtc().difference(state.startTime!).inSeconds 
-          : 0;
-    if (delta > 0) {
-      final session = TimeSession(
-        category: state.category,
-        durationSeconds: delta,
-        date: DateTime.now().toLocal().subtract(Duration(seconds: delta)),
-        note: note,
-      );
-      ref.read(sessionsProvider.notifier).addSession(session);
+    try {
+      if (snapshot.isRunning && snapshot.startTime != null) {
+        final delta = DateTime.now().toUtc().difference(snapshot.startTime!).inSeconds;
+        if (delta > 0) {
+          final session = TimeSession(
+            category: snapshot.category,
+            durationSeconds: delta,
+            date: snapshot.startTime!.toLocal(),
+            note: note,
+          );
+          ref.read(sessionsProvider.notifier).addSession(session);
+        }
+      }
+      if (kIsWeb) {
+        MediaSessionService.setPlaybackState(false);
+        MediaSessionService.updateMetadata('已停止', '00:00');
+      }
+      final allCats = ref.read(categoryColorProvider).keys.toList();
+      final hidden = ref.read(hiddenCategoriesProvider);
+      final visible = allCats.where((c) => !hidden.contains(c)).toList();
+      final String nextCategory = visible.isNotEmpty ? visible.first : (allCats.isNotEmpty ? allCats.first : '尚未選擇項目');
+      
+      state = TimerState(category: nextCategory);
+      if (!kIsWeb) FlutterBackgroundService().invoke('stopService');
+      _syncToLiveActivity();
+      _syncToWidget();
+      _pushToCloud();
+    } finally {
+      _isFinalizingStop = false;
     }
-    if (kIsWeb) {
-      MediaSessionService.setPlaybackState(false);
-      MediaSessionService.updateMetadata('已停止', '00:00');
-    }
-    final allCats = ref.read(categoryColorProvider).keys.toList();
-    final hidden = ref.read(hiddenCategoriesProvider);
-    final visible = allCats.where((c) => !hidden.contains(c)).toList();
-    final String nextCategory = visible.isNotEmpty ? visible.first : (allCats.isNotEmpty ? allCats.first : '尚未選擇項目');
-    
-    state = TimerState(category: nextCategory);
-    if (!kIsWeb) FlutterBackgroundService().invoke('stopService');
-    _syncToLiveActivity();
-    _syncToWidget();
-    _pushToCloud();
   }
 
   void resetTimer() {

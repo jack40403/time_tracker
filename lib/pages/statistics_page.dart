@@ -3,10 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../theme/cartoon_theme.dart';
-import '../theme/app_themes.dart';
 import '../providers/app_theme_provider.dart';
-import '../models/time_session.dart';
+import '../models/goal.dart';
 import '../providers/session_provider.dart';
+import '../providers/task_goal_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/timer_provider.dart';
 import '../providers/ui_providers.dart';
@@ -56,6 +56,7 @@ class StatisticsPage extends ConsumerWidget {
     final catColors = ref.watch(categoryColorProvider);
     final visibleCats = ref.watch(visibleCategoriesProvider);
     final categoryFilter = ref.watch(statsCategoryFilterProvider);
+    final taskGoals = ref.watch(taskGoalProvider);
     
     var filteredSessions = FilterUtils.getFilteredSessions(allSessions, filter, offset, customRange);
 
@@ -80,6 +81,9 @@ class StatisticsPage extends ConsumerWidget {
     }
 
     final totalSeconds = categoryTotals.values.fold(0, (sum, val) => sum + val);
+    final Goal? binaryGoal = categoryFilter == null
+        ? null
+        : _findBinaryGoal(taskGoals, categoryFilter);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -193,7 +197,12 @@ class StatisticsPage extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 20),
-            if (totalSeconds == 0)
+            if (categoryFilter != null && binaryGoal != null)
+              _BinaryGoalCalendarCard(
+                goal: binaryGoal,
+                categoryColor: catColors[categoryFilter] ?? Theme.of(context).colorScheme.primary,
+              )
+            else if (totalSeconds == 0)
               Center(child: Padding(padding: const EdgeInsets.all(40), child: Text('此區段無紀錄', style: TextStyle(color: Colors.grey.shade400))))
             else if (categoryFilter != null)
               // Specific category focus view
@@ -285,10 +294,6 @@ class StatisticsPage extends ConsumerWidget {
                           centerSpaceRadius: 40,
                           sections: categoryTotals.entries.map((e) {
                             final percentage = (e.value / totalSeconds) * 100;
-                            final mins = e.value ~/ 60;
-                            final hrs = mins ~/ 60;
-                            final remainMins = mins % 60;
-                            final timeLabel = hrs > 0 ? '${hrs}h${remainMins}m' : '${mins}m';
                             return PieChartSectionData(
                               color: catColors[e.key] ?? Colors.grey,
                               value: e.value.toDouble(),
@@ -492,6 +497,15 @@ class StatisticsPage extends ConsumerWidget {
     );
   }
 
+  Goal? _findBinaryGoal(List<Goal> taskGoals, String category) {
+    final matches = taskGoals
+        .where((g) => g.category == category && g.type == GoalType.binary && g.isActive)
+        .toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    if (matches.isEmpty) return null;
+    return matches.first;
+  }
+
   Widget _buildCategoryChip(String? value, String label, bool isSelected, WidgetRef ref, BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
@@ -513,6 +527,232 @@ class StatisticsPage extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _BinaryGoalCalendarCard extends ConsumerStatefulWidget {
+  final Goal goal;
+  final Color categoryColor;
+
+  const _BinaryGoalCalendarCard({
+    required this.goal,
+    required this.categoryColor,
+  });
+
+  @override
+  ConsumerState<_BinaryGoalCalendarCard> createState() => _BinaryGoalCalendarCardState();
+}
+
+class _BinaryGoalCalendarCardState extends ConsumerState<_BinaryGoalCalendarCard> {
+  late DateTime _viewMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _viewMonth = DateTime(now.year, now.month, 1);
+  }
+
+  void _changeMonth(int delta) {
+    setState(() {
+      _viewMonth = DateTime(_viewMonth.year, _viewMonth.month + delta, 1);
+    });
+  }
+
+  String _dateKey(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentGoal = ref.watch(taskGoalProvider).firstWhere(
+          (g) => g.id == widget.goal.id,
+          orElse: () => widget.goal,
+        );
+    final now = DateTime.now();
+    final firstDayOfMonth = _viewMonth;
+    final lastDayOfMonth = DateTime(_viewMonth.year, _viewMonth.month + 1, 0);
+    final leadingDays = firstDayOfMonth.weekday - 1;
+    final completedDays = List.generate(lastDayOfMonth.day, (index) {
+      final day = index + 1;
+      final date = DateTime(_viewMonth.year, _viewMonth.month, day);
+      final val = currentGoal.completionHistory[_dateKey(date)] ?? 0;
+      return val > 0 ? 1 : 0;
+    }).fold<int>(0, (sum, val) => sum + val);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: widget.categoryColor.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: widget.categoryColor.withOpacity(0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      currentGoal.category,
+                      style: GoogleFonts.outfit(
+                        fontSize: ResponsiveHelper.sp(context, 22),
+                        fontWeight: FontWeight.bold,
+                        color: widget.categoryColor,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${currentGoal.title} 的月曆完成狀態',
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontSize: ResponsiveHelper.sp(context, 13),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '$completedDays / ${lastDayOfMonth.day}',
+                style: GoogleFonts.shareTechMono(
+                  fontSize: ResponsiveHelper.sp(context, 18),
+                  fontWeight: FontWeight.bold,
+                  color: widget.categoryColor,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left_rounded),
+                onPressed: () => _changeMonth(-1),
+                constraints: const BoxConstraints(),
+                padding: EdgeInsets.zero,
+              ),
+              Text(
+                '${_viewMonth.year}年 ${_viewMonth.month}月',
+                style: GoogleFonts.outfit(
+                  fontSize: ResponsiveHelper.sp(context, 18),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right_rounded),
+                onPressed: _viewMonth.year == now.year && _viewMonth.month == now.month ? null : () => _changeMonth(1),
+                constraints: const BoxConstraints(),
+                padding: EdgeInsets.zero,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: const ['一', '二', '三', '四', '五', '六', '日']
+                .map((d) => Expanded(
+                      child: Center(
+                        child: Text(
+                          d,
+                          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+                        ),
+                      ),
+                    ))
+                .toList(),
+          ),
+          const SizedBox(height: 10),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: 42,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+            ),
+            itemBuilder: (context, index) {
+              final dayIndex = index - leadingDays;
+              if (dayIndex < 0 || dayIndex >= lastDayOfMonth.day) {
+                return const SizedBox.shrink();
+              }
+
+              final dayNum = dayIndex + 1;
+              final date = DateTime(_viewMonth.year, _viewMonth.month, dayNum);
+              final dateStr = _dateKey(date);
+              final isCompleted = (currentGoal.completionHistory[dateStr] ?? 0) > 0;
+              final isToday = date.year == now.year && date.month == now.month && date.day == now.day;
+
+              return Container(
+                decoration: BoxDecoration(
+                  color: isCompleted
+                      ? Colors.green.withOpacity(0.88)
+                      : Colors.red.withOpacity(0.16),
+                  borderRadius: BorderRadius.circular(10),
+                  border: isToday ? Border.all(color: widget.categoryColor, width: 2) : null,
+                ),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      top: 4,
+                      right: 5,
+                      child: Text(
+                        '$dayNum',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: isCompleted ? Colors.white.withOpacity(0.75) : Colors.grey.shade600,
+                        ),
+                      ),
+                    ),
+                    Center(
+                      child: Icon(
+                        isCompleted ? Icons.check_rounded : Icons.close_rounded,
+                        size: 20,
+                        color: isCompleted ? Colors.white : Colors.redAccent,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 18),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _BinaryLegend(color: Colors.green, label: '已完成'),
+              const SizedBox(width: 16),
+              _BinaryLegend(color: Colors.redAccent, label: '未完成'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BinaryLegend extends StatelessWidget {
+  final Color color;
+  final String label;
+
+  const _BinaryLegend({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(width: 12, height: 12, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3))),
+        const SizedBox(width: 8),
+        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      ],
     );
   }
 }
