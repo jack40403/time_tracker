@@ -180,7 +180,7 @@ const AppTheme cartoonTheme = AppTheme(
   surface: Color(0xFFFFFDE7),
   surfaceAlt: Color(0xFFF5F3D8),
   ink: Color(0xFF1A1A2E),
-  mute: Color(0xFF091F35), // 深海藍：sky-blue 8.6:1 / ocean-blue 3.4:1(背景物理上限) / cream 16.2:1
+  mute: Color(0xFF071A2E), // 更深一點的深海藍，提升在 ocean-blue 背景上的可讀性
   accent: Color(0xFFFF8F00),
   accentSoft: Color(0x80FFB300),
   action: Color(0xFFFFD60A),
@@ -333,13 +333,13 @@ const AppTheme minimalTheme = AppTheme(
   surface: Color(0xFFFFFFFF),
   surfaceAlt: Color(0xFFF1F0EB),
   ink: Color(0xFF111111),
-  mute: Color(0xFF6B6B6B), // 深灰：bg 5.1:1 / surface 5.3:1（原 9A9A95 僅 2.7:1）
+  mute: Color(0xFF4A4A4A), // 提高淺色底上的次要文字對比
   accent: Color(0xFF111111),
   accentSoft: Color(0x14000000),
   action: Color(0xFF111111),
   actionInk: Color(0xFFFFFFFF),
   active: Color(0xFF111111),
-  chipInk: Color(0xFF666666),
+  chipInk: Color(0xFF3F3F3F),
   chipInkSel: Colors.white,
   chipBg: Color(0xFFF1F0EB),
   border: Colors.transparent,
