@@ -33,7 +33,6 @@ class TimerColorNotifier extends Notifier<Color> {
           }
         }
       });
-      Future.microtask(() => _saveToCloud(state));
     }
     return local;
   }

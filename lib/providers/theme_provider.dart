@@ -24,13 +24,6 @@ class ThemeModeNotifier extends Notifier<ThemeMode> {
       }
     });
 
-    // Merge-on-login: Push local theme preference to cloud on first login
-    ref.listen(firestoreServiceProvider, (prev, next) {
-      if (next != null && prev == null) {
-        _saveToCloud(state);
-      }
-    });
-
     return local;
   }
 
