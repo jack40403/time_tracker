@@ -65,7 +65,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '?????????,
+                  '手動新增紀錄',
                   style: GoogleFonts.outfit(
                     fontSize: ResponsiveHelper.sp(context, 24),
                     fontWeight: FontWeight.bold,
@@ -74,7 +74,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                 const SizedBox(height: 24),
                     
                     // Category
-                    Text('?鞊????', style: TextStyle(fontSize: ResponsiveHelper.sp(context, 14), color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
+                    Text('選擇分類', style: TextStyle(fontSize: ResponsiveHelper.sp(context, 14), color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -105,7 +105,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                     const SizedBox(height: 20),
 
                     // Date
-                    Text('?鞊??鈭?', style: TextStyle(fontSize: ResponsiveHelper.sp(context, 14), color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
+                    Text('選擇日期', style: TextStyle(fontSize: ResponsiveHelper.sp(context, 14), color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
                     InkWell(
                       onTap: () async {
@@ -136,7 +136,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                     Row(children: [
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text('????蹇?', style: TextStyle(fontSize: ResponsiveHelper.sp(context, 14), color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
+                          Text('開始時間', style: TextStyle(fontSize: ResponsiveHelper.sp(context, 14), color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 10),
                           InkWell(
                             onTap: () async {
@@ -161,7 +161,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                       const SizedBox(width: 16),
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text('?荒???蹇?', style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
+                          Text('結束時間', style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 10),
                           InkWell(
                             onTap: () async {
@@ -191,7 +191,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                       children: [
                         TextButton(
                           onPressed: () => Navigator.pop(context),
-                          child: const Text('?謘?', style: TextStyle(fontSize: 16)),
+                          child: const Text('取消', style: TextStyle(fontSize: 16)),
                         ),
                         const SizedBox(width: 16),
                         ElevatedButton(
@@ -202,7 +202,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                             if (endDt.isBefore(startDt) || endDt.isAtSameMomentAs(startDt)) {
                               Navigator.pop(context);
                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                                content: Text('??芰??垓??賹????????瞏??迎????), 
+                                content: Text('錯誤：結束時間必須晚於開始時間'), 
                                 behavior: SnackBarBehavior.floating,
                                 duration: Duration(milliseconds: 1500),
                               ));
@@ -219,7 +219,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                             );
                             Navigator.pop(context);
                             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                              content: Text('???賹??策???, style: TextStyle(fontSize: 18)), 
+                              content: Text('已成功新增紀錄', style: TextStyle(fontSize: 18)), 
                               behavior: SnackBarBehavior.floating,
                               duration: Duration(milliseconds: 1500),
                             ));
@@ -228,7 +228,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                           ),
-                          child: const Text('??????, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                          child: const Text('新增紀錄', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                         ),
                       ],
                     ),
@@ -277,14 +277,14 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
 
     return Scaffold(
       appBar: CartoonAppBar(
-        title: '???曇??????',
+        title: '歷史紀錄 📅',
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 8.0, top: 8.0, bottom: 8.0),
             child: FilledButton.tonalIcon(
               onPressed: _showManualAddDialog,
               icon: const Icon(Icons.add_circle_outline, size: 18),
-              label: const Text('??????', style: TextStyle(fontWeight: FontWeight.bold)),
+              label: const Text('手動新增', style: TextStyle(fontWeight: FontWeight.bold)),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
               ),
@@ -323,11 +323,11 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildFilterChip('daily', '?伍謑?, filter, ref),
-                    _buildFilterChip('weekly', '?伍??, filter, ref),
-                    _buildFilterChip('monthly', '?伍?', filter, ref),
-                    _buildFilterChip('yearly', '?伍??, filter, ref),
-                    _buildFilterChip('custom', '???????', filter, ref),
+                    _buildFilterChip('daily', '每日', filter, ref),
+                    _buildFilterChip('weekly', '每週', filter, ref),
+                    _buildFilterChip('monthly', '每月', filter, ref),
+                    _buildFilterChip('yearly', '每年', filter, ref),
+                    _buildFilterChip('custom', '自定義 📅', filter, ref),
                   ],
                 ),
               ),
@@ -373,7 +373,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                _buildCategoryChip(null, '??賂?, effectiveCategoryFilter == null, ref),
+                _buildCategoryChip(null, '全部', effectiveCategoryFilter == null, ref),
                 ...visibleCats.map((cat) => _buildCategoryChip(cat, cat, effectiveCategoryFilter == cat, ref)),
               ],
             ),
@@ -395,7 +395,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                           children: [
                             Icon(Icons.auto_graph, size: 20, color: Theme.of(context).colorScheme.primary),
                             const SizedBox(width: 8),
-                            Text(_showHeatmap ? '?璇??????瘙? : '?輯???????瘙?, style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)),
+                            Text(_showHeatmap ? '隱藏達成概覽' : '顯示達成概覽', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)),
                           ],
                         ),
                         Icon(_showHeatmap ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: Theme.of(context).colorScheme.primary),
@@ -414,7 +414,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
           if (sortedDates.isEmpty)
             SizedBox(
               height: 200,
-              child: Center(child: Text('??????, style: TextStyle(color: Colors.grey.shade400))),
+              child: Center(child: Text('沒有紀錄', style: TextStyle(color: Colors.grey.shade400))),
             )
           else
             ...sortedDates.map((date) {
@@ -431,7 +431,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(date, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                          Text('?株釭? ${_formatTime(dailyTotal)}', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 16)),
+                          Text('總計 ${_formatTime(dailyTotal)}', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 16)),
                         ],
                       ),
                     ),
@@ -453,10 +453,10 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                           ref.read(sessionsProvider.notifier).deleteSession(s);
                           ScaffoldMessenger.of(context).clearSnackBars();
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: const Text('???????),
+                            content: const Text('已刪除紀錄'),
                             duration: const Duration(seconds: 4),
                             action: SnackBarAction(
-                              label: '?箸??',
+                              label: '復原',
                               onPressed: () {
                                 ref.read(sessionsProvider.notifier).addSession(deletedSession);
                               },
@@ -493,7 +493,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                                             final end = s.date.add(Duration(seconds: s.durationSeconds));
                                             final start = '${s.date.hour.toString().padLeft(2, '0')}:${s.date.minute.toString().padLeft(2, '0')}';
                                             final endStr = '${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}';
-                                            return Text('$start ??$endStr', style: const TextStyle(fontSize: 15, color: Colors.grey));
+                                            return Text('$start → $endStr', style: const TextStyle(fontSize: 15, color: Colors.grey));
                                           }),
                                         ],
                                       ),
@@ -528,11 +528,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
 
   void _showEditSessionDialog(TimeSession session) {
     final catColors = ref.read(categoryColorProvider);
-    final visibleCategories = ref.read(historyVisibleCategoriesProvider);
     String selectedCategory = session.category;
-    if (!visibleCategories.contains(selectedCategory) && visibleCategories.isNotEmpty) {
-      selectedCategory = visibleCategories.first;
-    }
     DateTime selectedDate = DateTime(session.date.year, session.date.month, session.date.day);
     TimeOfDay startTime = TimeOfDay(hour: session.date.hour, minute: session.date.minute);
     final hoursController = TextEditingController(text: (session.durationSeconds ~/ 3600).toString());
@@ -544,23 +540,23 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) => AlertDialog(
-          title: const Text('?箏?抵????/ ?鈭?', style: TextStyle(fontWeight: FontWeight.bold)),
+          title: const Text('編輯紀錄 / 日誌', style: TextStyle(fontWeight: FontWeight.bold)),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ???
+                // 分類
                 DropdownButtonFormField<String>(
                   value: selectedCategory,
-                  decoration: const InputDecoration(labelText: '???'),
-                  items: visibleCategories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                  decoration: const InputDecoration(labelText: '分類'),
+                  items: catColors.keys.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
                   onChanged: (v) => setModalState(() => selectedCategory = v!),
                 ),
                 const SizedBox(height: 20),
 
-                // ?鈭?
-                const Text('?鈭?', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                // 日期
+                const Text('日期', style: TextStyle(fontSize: 12, color: Colors.grey)),
                 const SizedBox(height: 6),
                 InkWell(
                   onTap: () async {
@@ -587,8 +583,8 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                 ),
                 const SizedBox(height: 16),
 
-                // ????蹇?
-                const Text('????蹇?', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                // 起始時間
+                const Text('起始時間', style: TextStyle(fontSize: 12, color: Colors.grey)),
                 const SizedBox(height: 6),
                 InkWell(
                   onTap: () async {
@@ -610,27 +606,27 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                 ),
                 const SizedBox(height: 16),
 
-                // ?蹇???撞
-                const Text('?蹇???撞', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                // 時間長度
+                const Text('時間長度', style: TextStyle(fontSize: 12, color: Colors.grey)),
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    Expanded(child: TextField(controller: hoursController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '??, border: OutlineInputBorder()))),
+                    Expanded(child: TextField(controller: hoursController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '時', border: OutlineInputBorder()))),
                     const SizedBox(width: 8),
-                    Expanded(child: TextField(controller: minutesController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '??, border: OutlineInputBorder()))),
+                    Expanded(child: TextField(controller: minutesController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '分', border: OutlineInputBorder()))),
                     const SizedBox(width: 8),
-                    Expanded(child: TextField(controller: secondsController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '??, border: OutlineInputBorder()))),
+                    Expanded(child: TextField(controller: secondsController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '秒', border: OutlineInputBorder()))),
                   ],
                 ),
                 const SizedBox(height: 20),
 
-                // ?謕?
+                // 備註
                 TextField(
                   controller: noteController,
                   maxLines: 4,
                   decoration: const InputDecoration(
-                    labelText: '????????/ ?鈭??謕?',
-                    hintText: '?殉朴??謕?蹇??謍???餅蔬??對?...',
+                    labelText: '專注紀錄 / 日誌備註',
+                    hintText: '記下這段時間做了什麼或心得...',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -640,7 +636,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('?謘?'),
+              child: const Text('取消'),
             ),
             ElevatedButton(
               onPressed: () {
@@ -663,9 +659,9 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                 ref.read(sessionsProvider.notifier).deleteSession(session);
                 ref.read(sessionsProvider.notifier).addSession(updated);
                 Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('?????皝?')));
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('紀錄已更新')));
               },
-              child: const Text('?????賣??),
+              child: const Text('確認修改'),
             ),
           ],
         ),
@@ -755,23 +751,23 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       final targetDate = now.subtract(Duration(days: offset * 7));
       final mon = targetDate.subtract(Duration(days: targetDate.weekday - 1));
       datesToShow = List.generate(7, (i) => DateTime(mon.year, mon.month, mon.day + i));
-      title = "?蟡璇??????;
+      title = "本週達成概覽";
     } else if (filter == 'monthly') {
       final targetMonth = DateTime(now.year, now.month - offset, 1);
       final lastDay = DateTime(targetMonth.year, targetMonth.month + 1, 0).day;
       datesToShow = List.generate(lastDay, (i) => DateTime(targetMonth.year, targetMonth.month, i + 1));
-      title = "?蟡??????瘙?;
+      title = "本月達成概覽";
     } else if (filter == 'yearly') {
-       // ?伍???? (??????)
+       // 每年模式 (暫不變動)
        final targetYear = now.year - offset;
        return _buildYearlyHeatmap(targetYear);
     } else {
       return const SizedBox.shrink();
     }
 
-    // ?謚殷?賣餈文?謍????????輯???
+    // 關鍵修正：絕斷式隔離顯示
     if (categoryFilter == null) {
-      // ?? A?城?????閰鄞?綽??溘????????輯??扳謍?????瘙?
+      // 模式 A：只有點選「全部」標籤時，才顯示多列橫條概覽
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -816,8 +812,8 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
         ],
       );
     } else {
-      // ?? B?契??閰鄞?甄????梱??????嗆??啗??獢? 7 ??銋????瞉?
-      // ???蝞????謘????????
+      // 模式 B：點選「個別項目」時，只顯示該項目的 7 欄大月曆格子
+      // 過濾出當前選取的那個目標
       final g = displayGoals.firstWhere((goal) => goal.category == categoryFilter, orElse: () => displayGoals.first);
       final color = catColors[g.category] ?? Colors.blue;
       int leadingSpaces = (filter == 'monthly') ? (datesToShow.first.weekday - 1) : 0;
@@ -889,7 +885,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text("?虜瞍??撞??瘙?, style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey.shade700)),
+        Text("年度月度概覽", style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey.shade700)),
         const SizedBox(height: 12),
         Wrap(
           spacing: 8, runSpacing: 8,
@@ -898,7 +894,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
             return Container(
               width: 45, height: 45,
               decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withOpacity(0.05), borderRadius: BorderRadius.circular(8), border: Border.all(color: Theme.of(context).colorScheme.outlineVariant)),
-              child: Center(child: Text("${month}??, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+              child: Center(child: Text("${month}月", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
             );
           }),
         ),
