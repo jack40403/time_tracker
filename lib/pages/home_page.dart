@@ -146,7 +146,7 @@ class HomePage extends ConsumerWidget {
   }
 
   Widget _buildCategoryList(BuildContext context, WidgetRef ref, AppTheme t) {
-    final timerState = ref.watch(timerProvider);
+    final selectedCategory = ref.watch(timerProvider.select((s) => s.category));
     final visible = ref.watch(timerVisibleCategoriesProvider);
 
     return Padding(
@@ -155,13 +155,13 @@ class HomePage extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _ThemedSectionLabel(
-            text: '項目列表 (可拖曳排序)',
+            text: 'Category List (drag to reorder)',
             textColor: t.mute,
             trailing: Row(
               children: [
                 GestureDetector(
                   onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('💡 長按分類按鈕也能進行編輯')),
+                    const SnackBar(content: Text('Long press a category to edit it.')),
                   ),
                   child: Container(
                     padding: const EdgeInsets.all(6),
@@ -213,18 +213,14 @@ class HomePage extends ConsumerWidget {
               },
               padding: const EdgeInsets.all(8),
               children: [
-                ...visible.asMap().entries.map((entry) {
-                  final i = entry.key;
-                  final cat = entry.value;
-                  return _buildCategoryChip(context, ref, cat, timerState, i, t);
-                }),
+                for (final entry in visible.asMap().entries)
+                  _buildCategoryChip(context, ref, entry.value, selectedCategory == entry.value, entry.key, t),
                 if (visible.isEmpty)
                   Padding(
-                    key: const ValueKey('empty_prompt'),
-                    padding: const EdgeInsets.symmetric(vertical: 32),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
                     child: Center(
                       child: Text(
-                        '尚未新增項目，點擊上方＋號',
+                        'No categories yet. Tap + to add one.',
                         style: TextStyle(color: t.mute, fontSize: 13),
                       ),
                     ),
@@ -237,66 +233,67 @@ class HomePage extends ConsumerWidget {
     );
   }
 
-  Widget _buildCategoryChip(BuildContext context, WidgetRef ref, String cat, TimerState timerState, int index, AppTheme t) {
-    final isSelected = timerState.category == cat;
+  Widget _buildCategoryChip(BuildContext context, WidgetRef ref, String cat, bool isSelected, int index, AppTheme t) {
     final catColor = ref.watch(categoryColorProvider)[cat] ?? Colors.grey;
 
     return Padding(
       key: ValueKey(cat),
-      padding: const EdgeInsets.only(bottom: 8),
-      child: GestureDetector(
-        onTap: () => ref.read(timerProvider.notifier).changeCategory(cat),
-        onLongPress: () => showCategoryOptions(context, cat, ref),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: chipDecoration(t, selected: isSelected).copyWith(
-            color: isSelected ? catColor : t.chipBg,
-          ),
-          child: Row(
-            children: [
-              ReorderableDragStartListener(
-                index: index,
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: Icon(
-                    Icons.drag_indicator_rounded,
-                    color: isSelected ? t.ink.withOpacity(0.4) : Colors.grey.withOpacity(0.5),
-                    size: 20,
-                  ),
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: chipDecoration(t, selected: isSelected).copyWith(
+          color: isSelected ? catColor : t.chipBg,
+        ),
+        child: Row(
+          children: [
+            ReorderableDragStartListener(
+              index: index,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: Icon(
+                  Icons.drag_indicator_rounded,
+                  color: isSelected ? t.ink.withOpacity(0.4) : Colors.grey.withOpacity(0.5),
+                  size: 20,
                 ),
               ),
-              Expanded(
-                child: Text(
-                  cat,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: isSelected ? t.chipInkSel : t.chipInk,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
+            ),
+            Expanded(
+              child: Text(
+                cat,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: isSelected ? t.chipInkSel : t.chipInk,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-              if (isSelected && timerState.currentElapsed > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: t.surface.withOpacity(0.25),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: t.surface.withOpacity(0.4), width: 1),
-                  ),
-                  child: Text(
-                    '${(timerState.currentElapsed / 60).floor()}m',
-                    style: TextStyle(fontSize: 11, color: t.chipInkSel, fontWeight: FontWeight.bold),
-                  ),
-                ),
-            ],
-          ),
+            ),
+            if (isSelected)
+              Consumer(
+                builder: (context, ref, _) {
+                  final elapsed = ref.watch(timerProvider.select((s) => s.currentElapsed));
+                  if (elapsed <= 0) return const SizedBox.shrink();
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: t.surface.withOpacity(0.25),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: t.surface.withOpacity(0.4), width: 1),
+                    ),
+                    child: Text(
+                      '${(elapsed / 60).floor()}m',
+                      style: TextStyle(fontSize: 11, color: t.chipInkSel, fontWeight: FontWeight.bold),
+                    ),
+                  );
+                },
+              ),
+          ],
         ),
       ),
     );
   }
-
   Widget _buildTimerCard(BuildContext context, WidgetRef ref, AppTheme t, {double scale = 1.0}) {
     final timerState = ref.watch(timerProvider);
     final timerColor = ref.watch(timerColorProvider);
