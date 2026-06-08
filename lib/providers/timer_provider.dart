@@ -73,7 +73,7 @@ class TimerState {
 
   const TimerState({
     this.isRunning = false,
-    this.category = '尚未選擇項目',
+    this.category = '撠?豢??',
     this.startTime,
     this.baseSeconds = 0,
     this.lastSyncTime,
@@ -115,7 +115,7 @@ class TimerState {
 
   factory TimerState.fromJson(Map<String, dynamic> json) => TimerState(
         isRunning: json['isRunning'] ?? false,
-        category: json['category'] ?? '尚未選擇項目',
+        category: json['category'] ?? '撠?豢??',
         startTime: json['startTime'] != null ? DateTime.parse(json['startTime']).toUtc() : null,
         baseSeconds: json['baseSeconds'] ?? 0,
         lastSyncTime: json['lastSyncTime'] != null ? DateTime.parse(json['lastSyncTime']).toUtc() : null,
@@ -133,7 +133,7 @@ class TimerNotifier extends Notifier<TimerState> {
 
   String get debugId {
     final firestore = ref.read(firestoreServiceProvider);
-    if (firestore == null) return '未登入';
+    if (firestore == null) return '?芰??;
     final uid = firestore.userId;
     // v3.UltraSync_MASTER_UI_BRANDED: Official Design & Legacy Pro Suite
     final idPart = uid.length > 8 ? uid.substring(uid.length - 8) : uid;
@@ -168,7 +168,7 @@ class TimerNotifier extends Notifier<TimerState> {
         });
       });
 
-      // 關鍵修復：主動讀取雲端初始值，避免 listen 錯過已存在的快照
+      // ?靽桀儔嚗蜓???蝡臬?憪潘??踹? listen ?舫?撌脣??函?敹怎
       Future.microtask(() {
         final current = ref.read(cloudTimerProvider);
         if (current.hasValue && current.value != null) {
@@ -382,7 +382,7 @@ class TimerNotifier extends Notifier<TimerState> {
       } else if (allCats.isNotEmpty) {
         fallback = allCats.first;
       } else {
-        fallback = '尚未選擇項目';
+        fallback = '撠?豢??';
       }
       
       debugPrint('TimerNotifier: Switching fallback to: "$fallback"');
@@ -393,7 +393,7 @@ class TimerNotifier extends Notifier<TimerState> {
 
   void toggleTimer() {
     _lastManualActionTime = DateTime.now();
-    HapticFeedback.selectionClick(); // 開始或暫停時的輕微震動
+    HapticFeedback.selectionClick(); // ???????敺桅???
 
     if (state.isRunning) {
       final snapshot = state;
@@ -432,7 +432,7 @@ class TimerNotifier extends Notifier<TimerState> {
     final snapshot = state;
     _timer?.cancel();
     
-    // 強效震動兩下
+    // 撘瑟????拐?
     if (await Vibration.hasVibrator()) {
       Vibration.vibrate(pattern: [0, 300, 200, 300]);
     }
@@ -451,14 +451,9 @@ class TimerNotifier extends Notifier<TimerState> {
       }
       if (kIsWeb) {
         MediaSessionService.setPlaybackState(false);
-        MediaSessionService.updateMetadata('已停止', '00:00');
+        MediaSessionService.updateMetadata('撌脣?甇?, '00:00');
       }
-      final allCats = ref.read(categoryColorProvider).keys.toList();
-      final hidden = ref.read(hiddenCategoriesProvider);
-      final visible = allCats.where((c) => !hidden.contains(c)).toList();
-      final String nextCategory = visible.isNotEmpty ? visible.first : (allCats.isNotEmpty ? allCats.first : '尚未選擇項目');
-      
-      state = TimerState(category: nextCategory);
+      state = TimerState(category: snapshot.category);
       if (!kIsWeb) FlutterBackgroundService().invoke('stopService');
       _syncToLiveActivity();
       _syncToWidget();
