@@ -8,6 +8,7 @@ import 'storage_provider.dart';
 import 'firestore_provider.dart';
 import 'session_provider.dart';
 import 'category_provider.dart';
+import 'timer_provider.dart';
 import '../services/notification_service.dart';
 
 class GoalNotifier extends Notifier<List<Goal>> {
@@ -44,6 +45,12 @@ class GoalNotifier extends Notifier<List<Goal>> {
         _checkMilestones();
       });
     }
+
+    ref.listen(sessionsProvider, (previous, next) {
+      if (previous != next) {
+        Future.microtask(recalculateAllGoalsHistory);
+      }
+    });
 
     return _load();
   }
@@ -383,6 +390,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
     final allSessions = ref.read(sessionsProvider);
     final String cat = goal.category;
     int currentSeconds = 0;
+    final timerState = ref.read(timerProvider);
 
     for (var s in allSessions) {
       if (s.category == cat) {
@@ -405,6 +413,16 @@ class GoalNotifier extends Notifier<List<Goal>> {
         }
         if (match) currentSeconds += s.durationSeconds;
       }
+    }
+
+    final now = DateTime.now();
+    final isCurrentDay = targetDate.year == now.year && targetDate.month == now.month && targetDate.day == now.day;
+    if (goal.type == GoalType.time &&
+        isCurrentDay &&
+        !now.isBefore(goal.startDate.subtract(const Duration(seconds: 1))) &&
+        timerState.isRunning &&
+        timerState.category == cat) {
+      currentSeconds += timerState.currentElapsed;
     }
 
     if (goal.targetSeconds <= 0) return 1.0;
@@ -445,7 +463,14 @@ class GoalNotifier extends Notifier<List<Goal>> {
     if (progress >= 1.0) return '已達成！ 🎉';
     final now = DateTime.now();
     final dateKey = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    final currentToday = goal.completionHistory[dateKey] ?? 0;
+    final timerState = ref.read(timerProvider);
+    final currentToday = (goal.completionHistory[dateKey] ?? 0) +
+        ((goal.type == GoalType.time &&
+                !now.isBefore(goal.startDate.subtract(const Duration(seconds: 1))) &&
+                timerState.isRunning &&
+                timerState.category == goal.category)
+            ? timerState.currentElapsed
+            : 0);
     final remainingSeconds = goal.targetSeconds - currentToday;
     if (remainingSeconds <= 0) return '已達成！ 🎉';
     final hrs = remainingSeconds ~/ 3600;

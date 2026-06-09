@@ -235,61 +235,78 @@ class HomePage extends ConsumerWidget {
 
   Widget _buildCategoryChip(BuildContext context, WidgetRef ref, String cat, bool isSelected, int index, AppTheme t) {
     final catColor = ref.watch(categoryColorProvider)[cat] ?? Colors.grey;
+    final timerNotifier = ref.read(timerProvider.notifier);
 
     return Padding(
       key: ValueKey(cat),
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: chipDecoration(t, selected: isSelected).copyWith(
-          color: isSelected ? catColor : t.chipBg,
-        ),
-        child: Row(
-          children: [
-            ReorderableDragStartListener(
-              index: index,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: Icon(
-                  Icons.drag_indicator_rounded,
-                  color: isSelected ? t.ink.withOpacity(0.4) : Colors.grey.withOpacity(0.5),
-                  size: 20,
-                ),
-              ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () {
+            final timerState = ref.read(timerProvider);
+            if (timerState.isRunning) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('請先暫停或停止計時，再切換項目。')),
+              );
+              return;
+            }
+            timerNotifier.changeCategory(cat);
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: chipDecoration(t, selected: isSelected).copyWith(
+              color: isSelected ? catColor : t.chipBg,
             ),
-            Expanded(
-              child: Text(
-                cat,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: isSelected ? t.chipInkSel : t.chipInk,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
+            child: Row(
+              children: [
+                ReorderableDragStartListener(
+                  index: index,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: Icon(
+                      Icons.drag_indicator_rounded,
+                      color: isSelected ? t.ink.withOpacity(0.4) : Colors.grey.withOpacity(0.5),
+                      size: 20,
+                    ),
+                  ),
                 ),
-              ),
+                Expanded(
+                  child: Text(
+                    cat,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isSelected ? t.chipInkSel : t.chipInk,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (isSelected)
+                  Consumer(
+                    builder: (context, ref, _) {
+                      final elapsed = ref.watch(timerProvider.select((s) => s.currentElapsed));
+                      if (elapsed <= 0) return const SizedBox.shrink();
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: t.surface.withOpacity(0.25),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: t.surface.withOpacity(0.4), width: 1),
+                        ),
+                        child: Text(
+                          '${(elapsed / 60).floor()}m',
+                          style: TextStyle(fontSize: 11, color: t.chipInkSel, fontWeight: FontWeight.bold),
+                        ),
+                      );
+                    },
+                  ),
+              ],
             ),
-            if (isSelected)
-              Consumer(
-                builder: (context, ref, _) {
-                  final elapsed = ref.watch(timerProvider.select((s) => s.currentElapsed));
-                  if (elapsed <= 0) return const SizedBox.shrink();
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: t.surface.withOpacity(0.25),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: t.surface.withOpacity(0.4), width: 1),
-                    ),
-                    child: Text(
-                      '${(elapsed / 60).floor()}m',
-                      style: TextStyle(fontSize: 11, color: t.chipInkSel, fontWeight: FontWeight.bold),
-                    ),
-                  );
-                },
-              ),
-          ],
+          ),
         ),
       ),
     );

@@ -5,6 +5,7 @@ import '../models/goal.dart';
 import '../models/time_session.dart';
 import '../theme/cartoon_theme.dart';
 import '../providers/session_provider.dart';
+import '../providers/timer_provider.dart';
 import '../providers/goal_provider.dart';
 import '../providers/task_goal_provider.dart';
 import '../providers/category_provider.dart';
@@ -252,6 +253,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     final goals = ref.watch(visibleTimeGoalsProvider);
     final taskGoals = ref.watch(visibleTaskGoalsProvider);
     final categoryFilter = ref.watch(historyCategoryFilterProvider);
+    final timerState = ref.watch(timerProvider);
 
     var filteredSessions = FilterUtils.getFilteredSessions(allSessions, filter, offset, customRange);
 
@@ -419,7 +421,26 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
           else
             ...sortedDates.map((date) {
               final dateSessions = grouped[date]!;
-              final int dailyTotal = dateSessions.whereType<TimeSession>().fold(0, (sum, s) => sum + s.durationSeconds);
+              final isToday = date == '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}';
+              final int liveSeconds = isToday && timerState.isRunning ? timerState.currentElapsed : 0;
+              final int dailyTotal = dateSessions.whereType<TimeSession>().fold(0, (sum, s) => sum + s.durationSeconds) + liveSeconds;
+              final liveStart = timerState.sessionStartTime?.toLocal() ?? timerState.startTime?.toLocal();
+              final chartShowsLive = isToday &&
+                  timerState.isRunning &&
+                  liveStart != null &&
+                  liveStart.year == DateTime.now().year &&
+                  liveStart.month == DateTime.now().month &&
+                  liveStart.day == DateTime.now().day;
+              final chartSessions = chartShowsLive
+                  ? [
+                      ...allSessions,
+                      TimeSession(
+                        category: timerState.category,
+                        durationSeconds: timerState.currentElapsed,
+                        date: timerState.sessionStartTime?.toLocal() ?? timerState.startTime?.toLocal() ?? DateTime.now(),
+                      ),
+                    ]
+                  : allSessions;
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Column(
@@ -436,7 +457,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                       ),
                     ),
                     DayTimelineChart(
-                      sessions: allSessions,
+                      sessions: chartSessions,
                       catColors: catColors,
                       targetDay: DateTime.parse(date),
                     ),
