@@ -1,4 +1,4 @@
-﻿import 'package:uuid/uuid.dart';
+import 'package:uuid/uuid.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class TimeSession {
@@ -16,8 +16,9 @@ class TimeSession {
   }) : id = id ?? generateId(category, date);
 
   static String toBaseName(String name) {
-    // 蝘駁 Emoji ?畾泵???芯???摮摮?蝛箸
-    // 甇斗迤?”???蕪憭批???Emoji ?畾?    final emojiPattern = RegExp(
+    // 移除 Emoji 或特殊符號、數字、空白
+    // fix emoji pattern regex comment
+    final emojiPattern = RegExp(
       r'[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}]',
       unicode: true,
     );
