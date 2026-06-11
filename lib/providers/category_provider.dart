@@ -7,6 +7,7 @@ import 'session_provider.dart';
 import 'goal_provider.dart';
 import 'task_goal_provider.dart';
 import '../models/time_session.dart';
+import '../models/goal.dart';
 
 const defaultCategoryColors = {
   '閱讀 📚': Color(0xFF6C63FF),
