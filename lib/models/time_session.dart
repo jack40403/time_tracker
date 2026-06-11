@@ -1,4 +1,4 @@
-import 'package:uuid/uuid.dart';
+﻿import 'package:uuid/uuid.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class TimeSession {
@@ -6,8 +6,7 @@ class TimeSession {
   final String category;
   final int durationSeconds;
   final DateTime date;
-  final String? note; // 用於「日誌」的心得或詳細描述
-
+  final String? note; // ?冽?隤?敹??底蝝唳?餈?
   TimeSession({
     String? id,
     required this.category,
@@ -17,9 +16,8 @@ class TimeSession {
   }) : id = id ?? generateId(category, date);
 
   static String toBaseName(String name) {
-    // 移除 Emoji 與特殊符號，只保留文字、數字與空格
-    // 此正則表達式過濾大多數 Emoji 區段
-    final emojiPattern = RegExp(
+    // 蝘駁 Emoji ?畾泵???芯???摮摮?蝛箸
+    // 甇斗迤?”???蕪憭批???Emoji ?畾?    final emojiPattern = RegExp(
       r'[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}]',
       unicode: true,
     );

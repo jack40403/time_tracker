@@ -1,4 +1,4 @@
-import 'package:vibration/vibration.dart';
+﻿import 'package:vibration/vibration.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,7 +6,9 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:home_widget/home_widget.dart';
+import 'package:uuid/uuid.dart';
 import '../models/time_session.dart';
+import '../models/active_timer_record.dart';
 import 'storage_provider.dart';
 import 'session_provider.dart';
 import 'firestore_provider.dart';
@@ -70,14 +72,32 @@ class TimerState {
   final int baseSeconds;
   final DateTime? lastSyncTime;
   final DateTime? sessionStartTime;
+  final String status;
+  final String? recordId;
+  final String? deviceId;
+  final String? workspaceId;
+  final DateTime? startedAt;
+  final DateTime? endedAt;
+  final int durationSeconds;
+  final String? note;
+  final DateTime? updatedAt;
 
   const TimerState({
     this.isRunning = false,
-    this.category = '尚未選擇項目',
+    this.category = '撠?豢??',
     this.startTime,
     this.baseSeconds = 0,
     this.lastSyncTime,
     this.sessionStartTime,
+    this.status = 'idle',
+    this.recordId,
+    this.deviceId,
+    this.workspaceId,
+    this.startedAt,
+    this.endedAt,
+    this.durationSeconds = 0,
+    this.note,
+    this.updatedAt,
   });
 
   int get currentElapsed {
@@ -93,6 +113,15 @@ class TimerState {
     int? baseSeconds,
     DateTime? lastSyncTime,
     DateTime? sessionStartTime,
+    String? status,
+    String? recordId,
+    String? deviceId,
+    String? workspaceId,
+    DateTime? startedAt,
+    DateTime? endedAt,
+    int? durationSeconds,
+    String? note,
+    DateTime? updatedAt,
   }) {
     return TimerState(
       isRunning: isRunning ?? this.isRunning,
@@ -101,6 +130,15 @@ class TimerState {
       baseSeconds: baseSeconds ?? this.baseSeconds,
       lastSyncTime: lastSyncTime ?? this.lastSyncTime,
       sessionStartTime: sessionStartTime ?? this.sessionStartTime,
+      status: status ?? this.status,
+      recordId: recordId ?? this.recordId,
+      deviceId: deviceId ?? this.deviceId,
+      workspaceId: workspaceId ?? this.workspaceId,
+      startedAt: startedAt ?? this.startedAt,
+      endedAt: endedAt ?? this.endedAt,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      note: note ?? this.note,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
@@ -111,17 +149,35 @@ class TimerState {
         'baseSeconds': baseSeconds,
         'lastSyncTime': lastSyncTime?.toUtc().toIso8601String(),
         'sessionStartTime': sessionStartTime?.toUtc().toIso8601String(),
+        'status': status,
+        'recordId': recordId,
+        'deviceId': deviceId,
+        'workspaceId': workspaceId,
+        'startedAt': startedAt?.toUtc().toIso8601String(),
+        'endedAt': endedAt?.toUtc().toIso8601String(),
+        'durationSeconds': durationSeconds,
+        'note': note,
+        'updatedAt': updatedAt?.toUtc().toIso8601String(),
       };
 
   factory TimerState.fromJson(Map<String, dynamic> json) => TimerState(
         isRunning: json['isRunning'] ?? false,
-        category: json['category'] ?? '尚未選擇項目',
+        category: json['category'] ?? '撠?豢??',
         startTime: json['startTime'] != null ? DateTime.parse(json['startTime']).toUtc() : null,
         baseSeconds: json['baseSeconds'] ?? 0,
         lastSyncTime: json['lastSyncTime'] != null ? DateTime.parse(json['lastSyncTime']).toUtc() : null,
         sessionStartTime: json['sessionStartTime'] != null
             ? DateTime.parse(json['sessionStartTime']).toUtc()
             : (json['startTime'] != null ? DateTime.parse(json['startTime']).toUtc() : null),
+        status: json['status']?.toString() ?? (json['isRunning'] == true ? 'running' : 'idle'),
+        recordId: json['recordId']?.toString(),
+        deviceId: json['deviceId']?.toString(),
+        workspaceId: json['workspaceId']?.toString(),
+        startedAt: json['startedAt'] != null ? DateTime.parse(json['startedAt']).toUtc() : null,
+        endedAt: json['endedAt'] != null ? DateTime.parse(json['endedAt']).toUtc() : null,
+        durationSeconds: (json['durationSeconds'] as num?)?.toInt() ?? 0,
+        note: json['note']?.toString(),
+        updatedAt: json['updatedAt'] != null ? DateTime.parse(json['updatedAt']).toUtc() : null,
       );
 }
 
@@ -130,10 +186,11 @@ class TimerNotifier extends Notifier<TimerState> {
   bool _isSyncingFromCloud = false;
   bool _isFinalizingStop = false;
   DateTime? _lastManualActionTime;
+  String? _cachedDeviceId;
 
   String get debugId {
     final firestore = ref.read(firestoreServiceProvider);
-    if (firestore == null) return '未登入';
+    if (firestore == null) return '?';
     final uid = firestore.userId;
     // v3.UltraSync_MASTER_UI_BRANDED: Official Design & Legacy Pro Suite
     final idPart = uid.length > 8 ? uid.substring(uid.length - 8) : uid;
@@ -148,12 +205,59 @@ class TimerNotifier extends Notifier<TimerState> {
     return '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
   }
 
+  String get _deviceId {
+    _cachedDeviceId ??= ref.read(storageServiceProvider).loadOrCreateDeviceId();
+    return _cachedDeviceId!;
+  }
+
+  Map<String, dynamic> _activeRecordPayload({
+    required String status,
+    DateTime? stoppedAt,
+    int? durationSeconds,
+    String? note,
+  }) {
+    final nowUtc = DateTime.now().toUtc();
+    final effectiveStart = state.startedAt ?? state.sessionStartTime ?? state.startTime ?? nowUtc;
+    final effectiveDuration = durationSeconds ?? (state.isRunning ? state.currentElapsed : state.baseSeconds);
+    final recordId = state.recordId ?? const Uuid().v4();
+    final payload = ActiveTimerRecord(
+      recordId: recordId,
+      userId: ref.read(firestoreServiceProvider)?.userId ?? '',
+      workspaceId: state.workspaceId,
+      deviceId: _deviceId,
+      category: state.category,
+      status: status,
+      startedAt: effectiveStart,
+      endedAt: stoppedAt,
+      durationSeconds: effectiveDuration < 0 ? 0 : effectiveDuration,
+      updatedAt: stoppedAt ?? nowUtc,
+      note: note ?? state.note,
+    );
+    return {
+      ...payload.toJson(),
+      'isRunning': status == 'running',
+      'baseSeconds': status == 'running' ? state.currentElapsed : state.baseSeconds,
+      'startTime': effectiveStart.toIso8601String(),
+      'sessionStartTime': effectiveStart.toIso8601String(),
+    };
+  }
+
+  Future<void> _writeActiveRecordToCloud({required String status, String? note}) async {
+    final firestore = ref.read(firestoreServiceProvider);
+    if (firestore == null) return;
+    final payload = _activeRecordPayload(
+      status: status,
+      note: note,
+    );
+    debugPrint('TimerNotifier: Writing active timer state -> status=$status recordId=${payload['recordId']} category=${payload['category']} device=${payload['deviceId']}');
+    await firestore.upsertActiveTimerState(payload);
+  }
+
   @override
   TimerState build() {
     final storage = ref.watch(storageServiceProvider);
     final localJson = storage.loadTimerState();
     final firestore = ref.watch(firestoreServiceProvider);
-    TimerState? cloudSnapshot;
 
     if (kIsWeb) {
       MediaSessionService.initHandlers(toggleTimer);
@@ -168,12 +272,21 @@ class TimerNotifier extends Notifier<TimerState> {
         });
       });
 
-      // 關鍵修復：主動讀取雲端初始值，避免 listen 錯過已存在的快照
-      Future.microtask(() {
+      // ?靽桀儔嚗蜓???蝡臬?憪潘??踹? listen ?舫?撌脣??函?敹怎
+      Future.microtask(() async {
+        try {
+          final serverState = await firestore.fetchActiveTimerState(fromServer: true);
+          if (serverState != null) {
+            _syncFromRemote(TimerState.fromJson(serverState));
+            return;
+          }
+        } catch (e) {
+          debugPrint('TimerNotifier: server-first timer sync failed, falling back to stream/cache: $e');
+        }
+
         final current = ref.read(cloudTimerProvider);
         if (current.hasValue && current.value != null) {
-          cloudSnapshot = TimerState.fromJson(current.value!);
-          _syncFromRemote(cloudSnapshot!);
+          _syncFromRemote(TimerState.fromJson(current.value!));
         }
       });
     }
@@ -216,6 +329,7 @@ class TimerNotifier extends Notifier<TimerState> {
     if (!kIsWeb) {
       FlutterBackgroundService().on('statusChange').listen((event) {
         if (event != null && !kIsWeb) {
+          if (_isFinalizingStop) return;
           final bool remoteRunning = event['isRunning'];
           final int remoteSeconds = event['currentElapsed'];
           
@@ -226,21 +340,29 @@ class TimerNotifier extends Notifier<TimerState> {
                 startTime: DateTime.now().toUtc().subtract(Duration(seconds: remoteSeconds)),
                 baseSeconds: 0,
                 sessionStartTime: state.sessionStartTime ?? DateTime.now().toUtc().subtract(Duration(seconds: remoteSeconds)),
+                status: 'running',
+                durationSeconds: remoteSeconds,
               );
               _startTicker();
             } else {
               if (_isFinalizingStop) return;
               _timer?.cancel();
 
-              state = state.copyWith(isRunning: false, baseSeconds: remoteSeconds, startTime: null);
+              state = state.copyWith(
+                isRunning: false,
+                baseSeconds: remoteSeconds,
+                startTime: null,
+                status: remoteSeconds > 0 ? 'paused' : 'idle',
+                durationSeconds: remoteSeconds,
+              );
             }
-            _pushToCloud();
+            unawaited(_pushToCloud());
           }
         }
       });
 
       FlutterBackgroundService().on('stopFromNotification').listen((event) {
-        stopAndSave();
+        unawaited(stopAndSave());
       });
     }
 
@@ -329,7 +451,7 @@ class TimerNotifier extends Notifier<TimerState> {
       // Auto-save every 5 ticks (approx 2.5 seconds) to handle background killing
       if (timer.tick % 5 == 0) {
         // Removed _syncToBackground() here to prevent the UI from recursively overriding the background service state
-        _pushToCloud();
+        unawaited(_pushToCloud());
         _syncToWidget();
       }
     });
@@ -349,8 +471,15 @@ class TimerNotifier extends Notifier<TimerState> {
   void changeCategory(String newCategory) {
     if (state.category == newCategory) return;
     _timer?.cancel();
-    state = state.copyWith(isRunning: false, category: newCategory, startTime: null, baseSeconds: 0);
-    _pushToCloud();
+    state = state.copyWith(
+      isRunning: false,
+      category: newCategory,
+      startTime: null,
+      baseSeconds: 0,
+      status: 'idle',
+      durationSeconds: 0,
+    );
+    unawaited(_pushToCloud());
   }
 
   void resetState() {
@@ -362,7 +491,7 @@ class TimerNotifier extends Notifier<TimerState> {
     if (state.category == oldCat) {
       state = state.copyWith(category: newCat);
       _syncToWidget();
-      _pushToCloud();
+      unawaited(_pushToCloud());
     }
   }
 
@@ -382,12 +511,12 @@ class TimerNotifier extends Notifier<TimerState> {
       } else if (allCats.isNotEmpty) {
         fallback = allCats.first;
       } else {
-        fallback = '尚未選擇項目';
+        fallback = '撠?豢??';
       }
       
       debugPrint('TimerNotifier: Switching fallback to: "$fallback"');
       state = TimerState(category: fallback);
-      _pushToCloud();
+      unawaited(_pushToCloud());
     }
   }
 
@@ -401,17 +530,36 @@ class TimerNotifier extends Notifier<TimerState> {
       _timer?.cancel();
 
       final totalElapsed = snapshot.currentElapsed;
-      state = snapshot.copyWith(isRunning: false, baseSeconds: totalElapsed, startTime: null);
+      state = snapshot.copyWith(
+        isRunning: false,
+        baseSeconds: totalElapsed,
+        startTime: null,
+        status: 'paused',
+        durationSeconds: totalElapsed,
+        recordId: snapshot.recordId ?? const Uuid().v4(),
+        startedAt: snapshot.startedAt ?? snapshot.sessionStartTime ?? snapshot.startTime ?? DateTime.now().toUtc(),
+        deviceId: _deviceId,
+      );
       if (kIsWeb) {
         MediaSessionService.setPlaybackState(false);
         MediaSessionService.updateMetadata(snapshot.category, '00:00');
       }
     } else {
       final nowUtc = DateTime.now().toUtc();
+      final isResumingPausedRecord = state.status == 'paused' && state.recordId != null;
+      final recordId = isResumingPausedRecord ? state.recordId! : const Uuid().v4();
+      final startedAt = isResumingPausedRecord
+          ? (state.startedAt ?? state.sessionStartTime ?? nowUtc)
+          : nowUtc;
       state = state.copyWith(
         isRunning: true,
         startTime: nowUtc,
-        sessionStartTime: state.sessionStartTime ?? nowUtc,
+        sessionStartTime: isResumingPausedRecord ? (state.sessionStartTime ?? startedAt) : nowUtc,
+        status: 'running',
+        recordId: recordId,
+        deviceId: _deviceId,
+        startedAt: startedAt,
+        durationSeconds: state.baseSeconds,
       );
       if (!kIsWeb) {
         try {
@@ -425,35 +573,59 @@ class TimerNotifier extends Notifier<TimerState> {
     _syncToBackground();
     _syncToLiveActivity();
     _syncToWidget();
-    _pushToCloud();
+    unawaited(_pushToCloud());
   }
 
-  void stopAndSave({String? note}) async {
+  Future<void> stopAndSave({String? note}) async {
     _isFinalizingStop = true;
     final snapshot = state;
     _timer?.cancel();
 
     try {
-      final duration = snapshot.currentElapsed;
+      final firestore = ref.read(firestoreServiceProvider);
+      final stoppedAt = DateTime.now().toUtc();
+      Map<String, dynamic>? authoritativeRecord;
+      if (firestore != null) {
+        try {
+          authoritativeRecord = await firestore.stopActiveTimerRecord(
+            deviceId: _deviceId,
+            workspaceId: snapshot.workspaceId,
+            stoppedAt: stoppedAt,
+            observedElapsedSeconds: snapshot.currentElapsed,
+            note: note,
+          );
+        } catch (e) {
+          debugPrint('TimerNotifier: stopActiveTimerRecord failed, falling back to local snapshot: $e');
+        }
+      }
+
+      final record = authoritativeRecord ?? _activeRecordPayload(
+        status: 'stopped',
+        stoppedAt: stoppedAt,
+        durationSeconds: snapshot.currentElapsed,
+        note: note,
+      );
+      final recordData = ActiveTimerRecord.fromJson(record);
+      final duration = recordData.durationSeconds > 0 ? recordData.durationSeconds : snapshot.currentElapsed;
+      debugPrint('TimerNotifier: stop finalized -> recordId=${recordData.recordId} duration=$duration startedAt=${recordData.startedAt.toUtc().toIso8601String()} device=${_deviceId}');
       if (duration > 0) {
-        final sessionStart = snapshot.sessionStartTime ?? snapshot.startTime ?? DateTime.now().toUtc().subtract(Duration(seconds: duration));
         final session = TimeSession(
           category: snapshot.category,
           durationSeconds: duration,
-          date: sessionStart.toLocal(),
+          date: recordData.startedAt.toLocal(),
           note: note,
         );
-        ref.read(sessionsProvider.notifier).addSession(session);
+        await ref.read(sessionsProvider.notifier).addSession(session);
       }
       if (kIsWeb) {
         MediaSessionService.setPlaybackState(false);
-        MediaSessionService.updateMetadata('已停止', '00:00');
+        MediaSessionService.updateMetadata(snapshot.category, '00:00');
       }
       state = TimerState(category: snapshot.category);
       if (!kIsWeb) FlutterBackgroundService().invoke('stopService');
       _syncToLiveActivity();
       _syncToWidget();
-      _pushToCloud();
+      _saveLocally();
     } finally {
       _isFinalizingStop = false;
     }
@@ -461,7 +633,13 @@ class TimerNotifier extends Notifier<TimerState> {
 
   void resetTimer() {
     _timer?.cancel();
-    state = state.copyWith(isRunning: false, baseSeconds: 0, startTime: null);
+    state = state.copyWith(
+      isRunning: false,
+      baseSeconds: 0,
+      startTime: null,
+      status: 'idle',
+      durationSeconds: 0,
+    );
     if (kIsWeb) {
       MediaSessionService.setPlaybackState(false);
       MediaSessionService.updateMetadata(state.category, '00:00');
@@ -469,16 +647,26 @@ class TimerNotifier extends Notifier<TimerState> {
     _syncToBackground();
     _syncToLiveActivity();
     _syncToWidget();
-    _pushToCloud();
+    unawaited(_pushToCloud());
   }
 
-  void _pushToCloud() {
+  Future<void> _pushToCloud() async {
     _saveLocally();
-    if (_isSyncingFromCloud) return; 
+    if (_isSyncingFromCloud) return;
+    if (state.status == 'stopped' || (!state.isRunning && state.currentElapsed <= 0)) return;
     final firestore = ref.read(firestoreServiceProvider);
     if (firestore != null) {
-      final newState = state.copyWith(lastSyncTime: DateTime.now().toUtc());
-      firestore.updateTimerState(newState.toJson());
+      final nowUtc = DateTime.now().toUtc();
+      final newState = state.copyWith(
+        lastSyncTime: nowUtc,
+        updatedAt: nowUtc,
+        deviceId: _deviceId,
+        recordId: state.recordId ?? const Uuid().v4(),
+        startedAt: state.startedAt ?? state.sessionStartTime ?? state.startTime ?? nowUtc,
+        status: state.isRunning ? 'running' : (state.currentElapsed > 0 ? 'paused' : 'idle'),
+        durationSeconds: state.currentElapsed,
+      );
+      await firestore.upsertActiveTimerState(newState.toJson());
     }
   }
 
@@ -487,6 +675,7 @@ class TimerNotifier extends Notifier<TimerState> {
   }
 
   void forceSync() {
+    if (_isFinalizingStop) return;
     ref.invalidate(cloudTimerProvider);
     final currentCloud = ref.read(cloudTimerProvider).value;
     if (currentCloud != null) _syncFromRemote(TimerState.fromJson(currentCloud));
@@ -498,6 +687,7 @@ class TimerNotifier extends Notifier<TimerState> {
 
   void requestBackgroundSync() {
     if (kIsWeb) return;
+    if (_isFinalizingStop) return;
     try {
       FlutterBackgroundService().invoke('requestSync');
       // On resume, also double check if service is alive

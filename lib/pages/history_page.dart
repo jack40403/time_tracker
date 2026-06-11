@@ -35,7 +35,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   }
 
   void _showManualAddDialog() {
-    final visibleCategories = ref.read(historyVisibleCategoriesProvider);
+    final visibleCategories = ref.read(historyManualAddTimeCategoriesProvider);
     final catColors = ref.read(categoryColorProvider);
     if (visibleCategories.isEmpty) return;
 
@@ -660,7 +660,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
               child: const Text('取消'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 final h = int.tryParse(hoursController.text) ?? 0;
                 final m = int.tryParse(minutesController.text) ?? 0;
                 final s = int.tryParse(secondsController.text) ?? 0;
@@ -672,13 +672,13 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                   startTime.hour, startTime.minute,
                 );
                 final updated = TimeSession(
+                  id: session.id,
                   category: selectedCategory,
                   durationSeconds: newDuration,
                   date: newDate,
                   note: noteController.text.trim().isEmpty ? null : noteController.text.trim(),
                 );
-                ref.read(sessionsProvider.notifier).deleteSession(session);
-                ref.read(sessionsProvider.notifier).addSession(updated);
+                await ref.read(sessionsProvider.notifier).updateSession(updated);
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('紀錄已更新')));
               },

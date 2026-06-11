@@ -615,3 +615,15 @@ final visibleTimeGoalsProvider = Provider<List<Goal>>((ref) {
   final hiddenGlobal = ref.watch(hiddenCategoriesProvider);
   return all.where((g) => g.isActive && !hiddenGoals.contains(g.category) && !hiddenGlobal.contains(g.category)).toList();
 });
+
+final historyManualAddTimeCategoriesProvider = Provider<List<String>>((ref) {
+  final timeGoals = ref.watch(visibleTimeGoalsProvider);
+  final categories = <String>{};
+  for (final goal in timeGoals) {
+    if (goal.type == GoalType.time) {
+      categories.add(goal.category);
+    }
+  }
+  final list = categories.toList()..sort();
+  return list;
+});

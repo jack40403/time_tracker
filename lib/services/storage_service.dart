@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 import '../models/time_session.dart';
 
 class StorageService {
@@ -18,6 +19,7 @@ class StorageService {
   static const String _themeModeKey = 'theme_mode';
   static const String _timerStateKey = 'timer_state_v2';
   static const String _layoutModeKey = 'app_layout_mode';
+  static const String _deviceIdKey = 'device_id';
 
   SharedPreferences get prefs => _prefs;
 
@@ -164,6 +166,15 @@ class StorageService {
 
   Future<void> saveTimerState(Map<String, dynamic> state) async {
     await _prefs.setString(_pk(_timerStateKey), jsonEncode(state));
+  }
+
+  String loadOrCreateDeviceId() {
+    final key = _pk(_deviceIdKey);
+    final existing = _prefs.getString(key);
+    if (existing != null && existing.isNotEmpty) return existing;
+    final created = const Uuid().v4();
+    _prefs.setString(key, created);
+    return created;
   }
 
   // --- Layout Mode ---

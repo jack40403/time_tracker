@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import '../models/time_session.dart';
+import '../models/active_timer_record.dart';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -21,9 +23,12 @@ class FirestoreService {
   DocumentReference get _settingsRef =>
       _db.collection('users').doc(userId).collection('settings').doc('app_config');
 
+  DocumentReference get _activeTimerRef =>
+      _db.collection('users').doc(userId).collection('settings').doc('timer_state');
+
   // Standardized ID generation (No-Emoji stable IDs)
   String _getSessionId(TimeSession s) {
-    return TimeSession.generateId(s.category, s.date);
+    return s.id.isNotEmpty ? s.id : TimeSession.generateId(s.category, s.date);
   }
 
   // --- Sessions Sync ---
@@ -68,6 +73,16 @@ class FirestoreService {
       await _sessionsRef.doc(id).set(session.toJson());
     } catch (e) {
       debugPrint('FirestoreService Error adding session: $e');
+    }
+  }
+
+  Future<void> updateSession(TimeSession session) async {
+    final id = _getSessionId(session);
+    debugPrint('FirestoreService: Updating session $id');
+    try {
+      await _sessionsRef.doc(id).set(session.toJson());
+    } catch (e) {
+      debugPrint('FirestoreService Error updating session: $e');
     }
   }
 
@@ -183,21 +198,98 @@ class FirestoreService {
   // --- Real-time Timer Sync ---
   Stream<Map<String, dynamic>?> watchTimerState() {
     debugPrint('FirestoreService: Watching timer state for $userId');
-    return _db.collection('users').doc(userId).collection('settings').doc('timer_state')
-        .snapshots()
-        .map((snapshot) {
-          debugPrint('FirestoreService: Received timer state update');
-          return snapshot.data() as Map<String, dynamic>?;
-        });
+    return _activeTimerRef.snapshots().map((snapshot) {
+      debugPrint('FirestoreService: Received timer state update');
+      return snapshot.data() as Map<String, dynamic>?;
+    });
+  }
+
+  Future<Map<String, dynamic>?> fetchActiveTimerState({bool fromServer = true}) async {
+    debugPrint('FirestoreService: Fetching active timer state for $userId (server=$fromServer)');
+    try {
+      final snap = await _activeTimerRef.get(
+        fromServer ? const GetOptions(source: Source.server) : const GetOptions(source: Source.serverAndCache),
+      );
+      return snap.data() as Map<String, dynamic>?;
+    } catch (e) {
+      debugPrint('FirestoreService: Fetch active timer state failed: $e');
+      if (!fromServer) rethrow;
+      final snap = await _activeTimerRef.get();
+      return snap.data() as Map<String, dynamic>?;
+    }
+  }
+
+  Future<void> upsertActiveTimerState(Map<String, dynamic> state) async {
+    debugPrint('FirestoreService: Upserting active timer state for $userId');
+    try {
+      await _activeTimerRef.set(state, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('FirestoreService Error updating timer state: $e');
+      rethrow;
+    }
   }
 
   Future<void> updateTimerState(Map<String, dynamic> state) async {
-    debugPrint('FirestoreService: Updating timer state');
+    await upsertActiveTimerState(state);
+  }
+
+  Future<Map<String, dynamic>?> stopActiveTimerRecord({
+    required String deviceId,
+    required DateTime stoppedAt,
+    String? workspaceId,
+    int? observedElapsedSeconds,
+    String? note,
+  }) async {
+    debugPrint('FirestoreService: Stopping active timer for $userId from device=$deviceId');
     try {
-      await _db.collection('users').doc(userId).collection('settings').doc('timer_state')
-          .set(state);
+      return await _db.runTransaction<Map<String, dynamic>?>((tx) async {
+        final snap = await tx.get(_activeTimerRef);
+        if (!snap.exists) {
+          debugPrint('FirestoreService: No active timer doc found.');
+          return null;
+        }
+
+        final data = Map<String, dynamic>.from(snap.data() as Map<String, dynamic>);
+        if (workspaceId != null && data['workspaceId'] != workspaceId) {
+          debugPrint('FirestoreService: Active timer workspace mismatch. Expected=$workspaceId actual=${data['workspaceId']}');
+          return null;
+        }
+
+        final status = data['status']?.toString() ?? 'running';
+        if (status == 'stopped') {
+          debugPrint('FirestoreService: Active timer already stopped. Returning existing record.');
+          return data;
+        }
+
+        final record = ActiveTimerRecord.fromJson(data);
+        final recordId = record.recordId.isNotEmpty ? record.recordId : const Uuid().v4();
+        final stopped = stoppedAt.toUtc();
+        final computedSeconds = observedElapsedSeconds != null && observedElapsedSeconds > 0
+            ? observedElapsedSeconds
+            : stopped.difference(record.startedAt).inSeconds;
+        final safeSeconds = computedSeconds < 0 ? 0 : computedSeconds;
+
+        final updated = <String, dynamic>{
+          ...data,
+          'recordId': recordId,
+          'userId': userId,
+          'status': 'stopped',
+          'endedAt': stopped.toIso8601String(),
+          'durationSeconds': safeSeconds,
+          'isRunning': false,
+          'baseSeconds': 0,
+          'updatedAt': stopped.toIso8601String(),
+          'stopDeviceId': deviceId,
+          if (note != null && note.isNotEmpty) 'note': note,
+        };
+
+        tx.set(_activeTimerRef, updated, SetOptions(merge: true));
+        debugPrint('FirestoreService: Active timer stopped successfully. duration=$safeSeconds');
+        return updated;
+      });
     } catch (e) {
-      debugPrint('FirestoreService Error updating timer state: $e');
+      debugPrint('FirestoreService Error stopping active timer: $e');
+      rethrow;
     }
   }
 
