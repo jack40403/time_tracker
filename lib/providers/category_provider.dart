@@ -618,3 +618,28 @@ final historyVisibleCategoriesProvider = Provider<List<String>>((ref) {
   final historyHidden = ref.watch(historyHiddenCategoriesProvider);
   return globalVisible.where((c) => !historyHidden.contains(c)).toList();
 });
+
+final historySelectableCategoriesProvider = Provider<List<String>>((ref) {
+  final allCategories = ref.watch(categoryColorProvider).keys.toList();
+  final hiddenGlobal = ref.watch(hiddenCategoriesProvider);
+  final hiddenHistory = ref.watch(historyHiddenCategoriesProvider);
+  final timeGoalCategories = ref.watch(goalProvider)
+      .where((g) => g.isActive && g.type == GoalType.time)
+      .map((g) => g.category)
+      .toSet();
+  final nonTimeGoalCategories = ref.watch(taskGoalProvider)
+      .where((g) => g.isActive && g.type != GoalType.time)
+      .map((g) => g.category)
+      .toSet();
+
+  return allCategories.where((category) {
+    if (hiddenGlobal.contains(category) || hiddenHistory.contains(category)) return false;
+    if (timeGoalCategories.contains(category)) return true;
+    if (nonTimeGoalCategories.contains(category)) return false;
+    return true;
+  }).toList();
+});
+
+final historyManualAddTimeCategoriesProvider = Provider<List<String>>((ref) {
+  return ref.watch(historySelectableCategoriesProvider);
+});

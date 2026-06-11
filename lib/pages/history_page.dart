@@ -35,7 +35,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   }
 
   void _showManualAddDialog() {
-    final visibleCategories = ref.read(historyManualAddTimeCategoriesProvider);
+    final visibleCategories = ref.read(historySelectableCategoriesProvider);
     final catColors = ref.read(categoryColorProvider);
     if (visibleCategories.isEmpty) return;
 
@@ -549,6 +549,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
 
   void _showEditSessionDialog(TimeSession session) {
     final catColors = ref.read(categoryColorProvider);
+    final visibleCategories = ref.read(historySelectableCategoriesProvider);
     String selectedCategory = session.category;
     DateTime selectedDate = DateTime(session.date.year, session.date.month, session.date.day);
     TimeOfDay startTime = TimeOfDay(hour: session.date.hour, minute: session.date.minute);
@@ -571,7 +572,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                 DropdownButtonFormField<String>(
                   value: selectedCategory,
                   decoration: const InputDecoration(labelText: '分類'),
-                  items: catColors.keys.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                  items: visibleCategories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
                   onChanged: (v) => setModalState(() => selectedCategory = v!),
                 ),
                 const SizedBox(height: 20),
