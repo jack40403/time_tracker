@@ -393,12 +393,13 @@ class TimerNotifier extends Notifier<TimerState> {
 
   void toggleTimer() {
     _lastManualActionTime = DateTime.now();
-    HapticFeedback.selectionClick(); // 開始或暫停時的輕微震動
+    // Avoid system haptics here because some Bluetooth media routes treat
+    // feedback events as an interruption and pause playback.
 
     if (state.isRunning) {
       final snapshot = state;
       _timer?.cancel();
-      
+
       final totalElapsed = snapshot.currentElapsed;
       state = snapshot.copyWith(isRunning: false, baseSeconds: totalElapsed, startTime: null);
       if (kIsWeb) {
@@ -431,12 +432,7 @@ class TimerNotifier extends Notifier<TimerState> {
     _isFinalizingStop = true;
     final snapshot = state;
     _timer?.cancel();
-    
-    // 強效震動兩下
-    if (await Vibration.hasVibrator()) {
-      Vibration.vibrate(pattern: [0, 300, 200, 300]);
-    }
-    
+
     try {
       final duration = snapshot.currentElapsed;
       if (duration > 0) {

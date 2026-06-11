@@ -8,7 +8,7 @@ import 'package:home_widget/home_widget.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 // Notification Channel constants
-const String notificationChannelId = 'timer_foreground_service_v2';
+const String notificationChannelId = 'timer_foreground_service_v3_silent';
 const int notificationId = 888;
 
 @pragma('vm:entry-point')
@@ -35,9 +35,9 @@ Future<void> initializeService() async {
   // Android notification channel setup
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     notificationChannelId, 
-    'Elite Timer Service V3', // Bumped name to force system update
+    'Me Time Timer (Silent)',
     description: 'This channel is used for the ongoing timer notification.',
-    importance: Importance.low, 
+    importance: Importance.min,
     enableVibration: false,
     playSound: false,
   );

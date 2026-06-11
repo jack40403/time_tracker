@@ -9,7 +9,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 
 object TimerNotificationManager {
-    private const val CHANNEL_ID = "timer_foreground_service_v2"
+    private const val CHANNEL_ID = "timer_foreground_service_v3_silent"
     private const val NOTIFICATION_ID = 888
 
     fun show(context: Context, title: String, content: String, isRunning: Boolean) {
@@ -18,11 +18,12 @@ object TimerNotificationManager {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Elite Timer Service V3",
-                NotificationManager.IMPORTANCE_LOW
+                "Me Time Timer (Silent)",
+                NotificationManager.IMPORTANCE_MIN
             ).apply {
                 enableVibration(false)
                 setSound(null, null)
+                setShowBadge(false)
             }
             nm.createNotificationChannel(channel)
         }
@@ -61,9 +62,13 @@ object TimerNotificationManager {
             .setOngoing(isRunning)
             .setShowWhen(false)
             .setOnlyAlertOnce(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setSilent(true)
+            .setSound(null)
+            .setVibrate(null)
+            .setDefaults(0)
             .setContentIntent(openPending)
             .addAction(0, toggleLabel, togglePending)
             .addAction(0, "停止", stopPending)
