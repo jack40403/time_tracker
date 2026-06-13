@@ -75,6 +75,7 @@ class TimerState {
   final String status;
   final String? recordId;
   final String? deviceId;
+  final String? startDeviceId;
   final String? workspaceId;
   final DateTime? startedAt;
   final DateTime? endedAt;
@@ -92,6 +93,7 @@ class TimerState {
     this.status = 'idle',
     this.recordId,
     this.deviceId,
+    this.startDeviceId,
     this.workspaceId,
     this.startedAt,
     this.endedAt,
@@ -116,6 +118,7 @@ class TimerState {
     String? status,
     String? recordId,
     String? deviceId,
+    String? startDeviceId,
     String? workspaceId,
     DateTime? startedAt,
     DateTime? endedAt,
@@ -133,6 +136,7 @@ class TimerState {
       status: status ?? this.status,
       recordId: recordId ?? this.recordId,
       deviceId: deviceId ?? this.deviceId,
+      startDeviceId: startDeviceId ?? this.startDeviceId,
       workspaceId: workspaceId ?? this.workspaceId,
       startedAt: startedAt ?? this.startedAt,
       endedAt: endedAt ?? this.endedAt,
@@ -152,6 +156,7 @@ class TimerState {
         'status': status,
         'recordId': recordId,
         'deviceId': deviceId,
+        'startDeviceId': startDeviceId,
         'workspaceId': workspaceId,
         'startedAt': startedAt?.toUtc().toIso8601String(),
         'endedAt': endedAt?.toUtc().toIso8601String(),
@@ -172,6 +177,7 @@ class TimerState {
         status: json['status']?.toString() ?? (json['isRunning'] == true ? 'running' : 'idle'),
         recordId: json['recordId']?.toString(),
         deviceId: json['deviceId']?.toString(),
+        startDeviceId: json['startDeviceId']?.toString() ?? json['deviceId']?.toString(),
         workspaceId: json['workspaceId']?.toString(),
         startedAt: json['startedAt'] != null ? DateTime.parse(json['startedAt']).toUtc() : null,
         endedAt: json['endedAt'] != null ? DateTime.parse(json['endedAt']).toUtc() : null,
@@ -220,10 +226,12 @@ class TimerNotifier extends Notifier<TimerState> {
     final effectiveStart = state.startedAt ?? state.sessionStartTime ?? state.startTime ?? nowUtc;
     final effectiveDuration = durationSeconds ?? (state.isRunning ? state.currentElapsed : state.baseSeconds);
     final recordId = state.recordId ?? const Uuid().v4();
+    final startDeviceId = state.startDeviceId ?? state.deviceId ?? _deviceId;
     final payload = ActiveTimerRecord(
       recordId: recordId,
       userId: ref.read(firestoreServiceProvider)?.userId ?? '',
       workspaceId: state.workspaceId,
+      startDeviceId: startDeviceId,
       deviceId: _deviceId,
       category: state.category,
       status: status,
@@ -385,11 +393,23 @@ class TimerNotifier extends Notifier<TimerState> {
       if (age > 12) return;
     }
 
+    final localUpdatedAt = state.updatedAt;
+    final remoteUpdatedAt = remote.updatedAt;
+    if (remote.isRunning &&
+        localUpdatedAt != null &&
+        remoteUpdatedAt != null &&
+        remoteUpdatedAt.isBefore(localUpdatedAt) &&
+        state.status == 'stopped') {
+      debugPrint('TimerNotifier: Ignoring stale running cloud timer state. remoteUpdatedAt=$remoteUpdatedAt localUpdatedAt=$localUpdatedAt');
+      return;
+    }
+
     if (_lastManualActionTime != null) {
       if (DateTime.now().difference(_lastManualActionTime!).inSeconds < 3) return;
     }
 
-    final bool shouldSync = remote.isRunning != state.isRunning || 
+    final bool shouldSync = remote.status == 'stopped' ||
+        remote.status != state.status ||
         remote.category != state.category ||
         (remote.isRunning && remote.startTime != null && !remote.startTime!.isAtSameMomentAs(state.startTime ?? DateTime(0))) ||
         remote.baseSeconds != state.baseSeconds;
@@ -539,6 +559,7 @@ class TimerNotifier extends Notifier<TimerState> {
         recordId: snapshot.recordId ?? const Uuid().v4(),
         startedAt: snapshot.startedAt ?? snapshot.sessionStartTime ?? snapshot.startTime ?? DateTime.now().toUtc(),
         deviceId: _deviceId,
+        startDeviceId: snapshot.startDeviceId ?? snapshot.deviceId ?? _deviceId,
       );
       if (kIsWeb) {
         MediaSessionService.setPlaybackState(false);
@@ -558,6 +579,9 @@ class TimerNotifier extends Notifier<TimerState> {
         status: 'running',
         recordId: recordId,
         deviceId: _deviceId,
+        startDeviceId: isResumingPausedRecord
+            ? (state.startDeviceId ?? state.deviceId ?? _deviceId)
+            : _deviceId,
         startedAt: startedAt,
         durationSeconds: state.baseSeconds,
       );
@@ -591,7 +615,6 @@ class TimerNotifier extends Notifier<TimerState> {
             deviceId: _deviceId,
             workspaceId: snapshot.workspaceId,
             stoppedAt: stoppedAt,
-            observedElapsedSeconds: snapshot.currentElapsed,
             note: note,
           );
         } catch (e) {
@@ -607,7 +630,11 @@ class TimerNotifier extends Notifier<TimerState> {
       );
       final recordData = ActiveTimerRecord.fromJson(record);
       final duration = recordData.durationSeconds > 0 ? recordData.durationSeconds : snapshot.currentElapsed;
-      debugPrint('TimerNotifier: stop finalized -> recordId=${recordData.recordId} duration=$duration startedAt=${recordData.startedAt.toUtc().toIso8601String()} device=${_deviceId}');
+      debugPrint(
+        'TimerNotifier: stop finalized -> recordId=${recordData.recordId} '
+        'startDeviceId=${recordData.startDeviceId} stopDeviceId=$_deviceId '
+        'duration=$duration startedAt=${recordData.startedAt.toUtc().toIso8601String()}',
+      );
       if (duration > 0) {
         final session = TimeSession(
           category: snapshot.category,
@@ -661,6 +688,7 @@ class TimerNotifier extends Notifier<TimerState> {
         lastSyncTime: nowUtc,
         updatedAt: nowUtc,
         deviceId: _deviceId,
+        startDeviceId: state.startDeviceId ?? state.deviceId ?? _deviceId,
         recordId: state.recordId ?? const Uuid().v4(),
         startedAt: state.startedAt ?? state.sessionStartTime ?? state.startTime ?? nowUtc,
         status: state.isRunning ? 'running' : (state.currentElapsed > 0 ? 'paused' : 'idle'),
@@ -674,11 +702,47 @@ class TimerNotifier extends Notifier<TimerState> {
     ref.read(storageServiceProvider).saveTimerState(state.toJson());
   }
 
-  void forceSync() {
+  Future<void> syncTimerFromServer() async {
     if (_isFinalizingStop) return;
-    ref.invalidate(cloudTimerProvider);
-    final currentCloud = ref.read(cloudTimerProvider).value;
-    if (currentCloud != null) _syncFromRemote(TimerState.fromJson(currentCloud));
+    final firestore = ref.read(firestoreServiceProvider);
+    if (firestore == null) return;
+
+    try {
+      final serverState = await firestore.fetchActiveTimerState(fromServer: true);
+      if (serverState == null) {
+        debugPrint('TimerNotifier: Server reports no active timer. Resetting local state.');
+        _timer?.cancel();
+        state = TimerState(category: state.category);
+        _saveLocally();
+        _syncToBackground();
+        _syncToWidget();
+        if (!kIsWeb) {
+          try {
+            FlutterBackgroundService().invoke('stopService');
+          } catch (e) {
+            debugPrint('TimerNotifier: stopService after empty server sync failed: $e');
+          }
+        }
+        return;
+      }
+
+      final remote = TimerState.fromJson(serverState);
+      _syncFromRemote(remote);
+
+      if (!remote.isRunning && !kIsWeb) {
+        try {
+          FlutterBackgroundService().invoke('stopService');
+        } catch (e) {
+          debugPrint('TimerNotifier: stopService after remote stop failed: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('TimerNotifier: syncTimerFromServer failed: $e');
+    }
+  }
+
+  Future<void> forceSync() async {
+    await syncTimerFromServer();
   }
 
   void disposeTimer() {

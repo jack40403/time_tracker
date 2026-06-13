@@ -4,6 +4,7 @@ class ActiveTimerRecord {
   final String recordId;
   final String userId;
   final String? workspaceId;
+  final String startDeviceId;
   final String deviceId;
   final String category;
   final String status;
@@ -16,6 +17,7 @@ class ActiveTimerRecord {
   const ActiveTimerRecord({
     required this.recordId,
     required this.userId,
+    required this.startDeviceId,
     required this.deviceId,
     required this.category,
     required this.status,
@@ -33,6 +35,7 @@ class ActiveTimerRecord {
     String? recordId,
     String? userId,
     String? workspaceId,
+    String? startDeviceId,
     String? deviceId,
     String? category,
     String? status,
@@ -46,6 +49,7 @@ class ActiveTimerRecord {
       recordId: recordId ?? this.recordId,
       userId: userId ?? this.userId,
       workspaceId: workspaceId ?? this.workspaceId,
+      startDeviceId: startDeviceId ?? this.startDeviceId,
       deviceId: deviceId ?? this.deviceId,
       category: category ?? this.category,
       status: status ?? this.status,
@@ -61,6 +65,7 @@ class ActiveTimerRecord {
         'recordId': recordId,
         'userId': userId,
         'workspaceId': workspaceId,
+        'startDeviceId': startDeviceId,
         'deviceId': deviceId,
         'category': category,
         'status': status,
@@ -91,6 +96,10 @@ class ActiveTimerRecord {
       recordId: json['recordId']?.toString() ?? json['id']?.toString() ?? '',
       userId: json['userId']?.toString() ?? '',
       workspaceId: json['workspaceId']?.toString(),
+      startDeviceId: json['startDeviceId']?.toString() ??
+          json['originalStartDeviceId']?.toString() ??
+          json['deviceId']?.toString() ??
+          '',
       deviceId: json['deviceId']?.toString() ?? '',
       category: json['category']?.toString() ?? 'Focus',
       status: json['status']?.toString() ?? 'running',

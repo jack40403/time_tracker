@@ -31,6 +31,20 @@ class FirestoreService {
     return s.id.isNotEmpty ? s.id : TimeSession.generateId(s.category, s.date);
   }
 
+  DateTime? _parseDateValue(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is Timestamp) return raw.toDate().toUtc();
+    if (raw is int) return DateTime.fromMillisecondsSinceEpoch(raw).toUtc();
+    if (raw is String) {
+      try {
+        return DateTime.parse(raw).toUtc();
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
   // --- Sessions Sync ---
   Stream<List<TimeSession>> watchSessions() {
     debugPrint('FirestoreService: Watching sessions for $userId');
@@ -237,7 +251,6 @@ class FirestoreService {
     required String deviceId,
     required DateTime stoppedAt,
     String? workspaceId,
-    int? observedElapsedSeconds,
     String? note,
   }) async {
     debugPrint('FirestoreService: Stopping active timer for $userId from device=$deviceId');
@@ -264,15 +277,29 @@ class FirestoreService {
         final record = ActiveTimerRecord.fromJson(data);
         final recordId = record.recordId.isNotEmpty ? record.recordId : const Uuid().v4();
         final stopped = stoppedAt.toUtc();
-        final computedSeconds = observedElapsedSeconds != null && observedElapsedSeconds > 0
-            ? observedElapsedSeconds
-            : stopped.difference(record.startedAt).inSeconds;
+        final persistedBaseSeconds = (data['baseSeconds'] as num?)?.toInt() ?? 0;
+        final persistedRunningStart = _parseDateValue(data['startTime']);
+        final isRunning = data['isRunning'] == true || status == 'running';
+        final computedSeconds = isRunning && persistedRunningStart != null
+            ? persistedBaseSeconds + stopped.difference(persistedRunningStart).inSeconds
+            : (persistedBaseSeconds > 0
+                ? persistedBaseSeconds
+                : stopped.difference(record.startedAt).inSeconds);
         final safeSeconds = computedSeconds < 0 ? 0 : computedSeconds;
+        final startDeviceId = record.startDeviceId.isNotEmpty ? record.startDeviceId : record.deviceId;
+
+        debugPrint(
+          'FirestoreService: Finalizing timer recordId=$recordId '
+          'startDeviceId=$startDeviceId stopDeviceId=$deviceId '
+          'startedAt=${record.startedAt.toIso8601String()} runningStart=${persistedRunningStart?.toIso8601String()} '
+          'baseSeconds=$persistedBaseSeconds stoppedAt=${stopped.toIso8601String()} duration=$safeSeconds',
+        );
 
         final updated = <String, dynamic>{
           ...data,
           'recordId': recordId,
           'userId': userId,
+          'startDeviceId': startDeviceId,
           'status': 'stopped',
           'endedAt': stopped.toIso8601String(),
           'durationSeconds': safeSeconds,
