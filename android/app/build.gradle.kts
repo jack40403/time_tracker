@@ -1,4 +1,5 @@
 import java.util.Properties
+import org.gradle.api.GradleException
 
 plugins {
     id("com.android.application")
@@ -15,6 +16,41 @@ val keystorePropertiesFile: File = rootProject.file("key.properties")
 val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(keystorePropertiesFile.inputStream())
+}
+
+val releaseStoreFilePath: String? = keystoreProperties.getProperty("storeFile")
+val releaseStoreFile: File? = releaseStoreFilePath?.let { path: String -> file(path) }
+
+fun validateReleaseSigningConfig() {
+    if (!keystorePropertiesFile.exists()) {
+        throw GradleException(
+            "Release builds require android/key.properties. " +
+                "Refusing to create a release APK signed with the debug key because it cannot update the published app."
+        )
+    }
+
+    val missingProperties = listOf("keyAlias", "keyPassword", "storeFile", "storePassword")
+        .filter { propertyName -> keystoreProperties.getProperty(propertyName).isNullOrBlank() }
+
+    if (missingProperties.isNotEmpty()) {
+        throw GradleException(
+            "Release signing config is incomplete in android/key.properties. " +
+                "Missing: ${missingProperties.joinToString(", ")}"
+        )
+    }
+
+    if (releaseStoreFile == null || !releaseStoreFile.exists()) {
+        throw GradleException(
+            "Release keystore was not found: ${releaseStoreFilePath ?: "(missing storeFile)"}. " +
+                "The storeFile path is resolved relative to android/app."
+        )
+    }
+}
+
+fun isReleaseBuildRequested(): Boolean {
+    return gradle.startParameter.taskNames.any { taskName ->
+        taskName.contains("Release", ignoreCase = true)
+    }
 }
 
 android {
@@ -60,10 +96,11 @@ android {
 
     buildTypes {
         release {
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+            if (isReleaseBuildRequested()) {
+                validateReleaseSigningConfig()
+            }
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
             }
             
             // 加入 Proguard 規則以防止 Widget 類別被混淆

@@ -38,6 +38,11 @@ jobs:
           echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> android/key.properties
           echo "storeFile=upload-keystore.jks" >> android/key.properties
 
+      - name: Verify release keystore
+        run: |
+          test -f android/app/upload-keystore.jks
+          test -s android/key.properties
+
       - name: Calculate release metadata
         run: |
           FULL_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d '\r')

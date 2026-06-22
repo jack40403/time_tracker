@@ -2,6 +2,17 @@
 
 Write-Host "--- [1/6] Preparing release version... ---" -ForegroundColor Cyan
 $pubspecPath = "pubspec.yaml"
+$keyPropertiesPath = "android/key.properties"
+$releaseKeystorePath = "android/app/upload-keystore.jks"
+
+if (!(Test-Path $keyPropertiesPath)) {
+    throw "Missing android/key.properties. Refusing to build a release APK with the debug signing key."
+}
+
+if (!(Test-Path $releaseKeystorePath)) {
+    throw "Missing release keystore: $releaseKeystorePath"
+}
+
 $pubContent = Get-Content $pubspecPath -Raw
 
 if ($pubContent -notmatch "version: (\d+\.\d+\.\d+)\+(\d+)") {
