@@ -203,7 +203,7 @@ const AppTheme cartoonTheme = AppTheme(
   navBorder: Color(0xFF1A1A2E),
   appBarInk: Color(0xFF1A1A2E), // 深色：sky-blue 8.8:1（AppBar 永遠在頂部天藍區）
   timerLabel: 'ME TIME ⏱',
-  runningLabel: 'GO GO GO! 🎯',
+  runningLabel: '專注進行中 🎯',
   timerHaloOn: false,
   bubbleStyle: 'cartoon',
 );
@@ -243,7 +243,7 @@ const AppTheme darkTheme = AppTheme(
   navBorder: Color(0xFF48CAE4),
   appBarInk: Color(0xFFF4F2E7),
   timerLabel: 'ME TIME ⏱',
-  runningLabel: 'GO GO GO! 🌙',
+  runningLabel: '專注進行中 🌙',
   timerHaloOn: true,
   bubbleStyle: 'cartoon-dark',
 );
@@ -281,7 +281,7 @@ const AppTheme retroTheme = AppTheme(
   navBorder: Color(0xFF3D2F1F),
   appBarInk: Color(0xFF3D2F1F),
   timerLabel: 'ME TIME',
-  runningLabel: 'GO! GO! GO!',
+  runningLabel: '專注進行中',
   bubbleStyle: 'pixel',
 );
 
@@ -320,7 +320,7 @@ const AppTheme pastelTheme = AppTheme(
   navBorder: Color(0x66FF8FA3),
   appBarInk: Color(0xFF6B3F61),
   timerLabel: 'me time',
-  runningLabel: 'focus mode',
+  runningLabel: '專注模式',
   timerHaloOn: false,
   bubbleStyle: 'pastel',
 );
@@ -356,7 +356,7 @@ const AppTheme minimalTheme = AppTheme(
   navBorder: Color(0xFFEEEEEA),
   appBarInk: Color(0xFF111111),
   timerLabel: 'me time',
-  runningLabel: 'focus',
+  runningLabel: '專注中',
   timerHaloOn: false,
   bubbleStyle: 'none',
 );

@@ -10,6 +10,8 @@ import 'session_provider.dart';
 import 'category_provider.dart';
 import 'timer_provider.dart';
 import '../services/notification_service.dart';
+import '../services/goal_progress_service.dart';
+import '../models/goal_progress.dart';
 
 class GoalNotifier extends Notifier<List<Goal>> {
   static const _storageKey = 'goals_time_v4';
@@ -386,47 +388,19 @@ class GoalNotifier extends Notifier<List<Goal>> {
   }
 
   double getProgress(Goal goal, {DateTime? atDate}) {
-    final targetDate = atDate ?? DateTime.now();
-    final allSessions = ref.read(sessionsProvider);
-    final String cat = goal.category;
-    int currentSeconds = 0;
-    final timerState = ref.read(timerProvider);
-
-    for (var s in allSessions) {
-      if (s.category == cat) {
-        final d = s.date.toLocal();
-        // 關鍵核心：僅統計起始日期之後的數據
-        if (d.isBefore(goal.startDate.subtract(const Duration(seconds: 1)))) continue;
-        
-        bool match = false;
-        if (goal.period == GoalPeriod.daily) {
-          match = d.year == targetDate.year && d.month == targetDate.month && d.day == targetDate.day;
-        } else if (goal.period == GoalPeriod.weekly) {
-          final monday = targetDate.subtract(Duration(days: targetDate.weekday - 1));
-          final start = DateTime(monday.year, monday.month, monday.day);
-          final end = DateTime(targetDate.year, targetDate.month, targetDate.day, 23, 59, 59);
-          match = d.isAfter(start.subtract(const Duration(seconds: 1))) && d.isBefore(end);
-        } else if (goal.period == GoalPeriod.monthly) {
-          match = d.year == targetDate.year && d.month == targetDate.month;
-        } else if (goal.period == GoalPeriod.yearly) {
-          match = d.year == targetDate.year;
-        }
-        if (match) currentSeconds += s.durationSeconds;
-      }
-    }
-
-    final now = DateTime.now();
-    final isCurrentDay = targetDate.year == now.year && targetDate.month == now.month && targetDate.day == now.day;
-    if (goal.type == GoalType.time &&
-        isCurrentDay &&
-        !now.isBefore(goal.startDate.subtract(const Duration(seconds: 1))) &&
-        timerState.isRunning &&
-        timerState.category == cat) {
-      currentSeconds += timerState.currentElapsed;
-    }
-
-    if (goal.targetSeconds <= 0) return 1.0;
-    return (currentSeconds / goal.targetSeconds).clamp(0.0, 1.0);
+    final timer = ref.read(timerProvider);
+    return GoalProgressService.buildProgress(
+      goal: goal,
+      now: atDate ?? DateTime.now(),
+      sessions: ref.read(sessionsProvider),
+      runningTimer: RunningTimerSnapshot(
+        isRunning: timer.isRunning,
+        category: timer.category,
+        startTime: timer.startTime,
+        baseSeconds: timer.baseSeconds,
+        currentElapsed: timer.currentElapsed,
+      ),
+    ).progress;
   }
 
   void _checkMilestones() {
@@ -459,142 +433,27 @@ class GoalNotifier extends Notifier<List<Goal>> {
   }
 
   String getRemainingText(Goal goal) {
-    final progress = getProgress(goal);
-    if (progress >= 1.0) return '已達成！ 🎉';
-    final now = DateTime.now();
-    final dateKey = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     final timerState = ref.read(timerProvider);
-    final currentToday = (goal.completionHistory[dateKey] ?? 0) +
-        ((goal.type == GoalType.time &&
-                !now.isBefore(goal.startDate.subtract(const Duration(seconds: 1))) &&
-                timerState.isRunning &&
-                timerState.category == goal.category)
-            ? timerState.currentElapsed
-            : 0);
-    final remainingSeconds = goal.targetSeconds - currentToday;
-    if (remainingSeconds <= 0) return '已達成！ 🎉';
-    final hrs = remainingSeconds ~/ 3600;
-    final mins = (remainingSeconds % 3600) ~/ 60;
-    if (hrs > 0) return '還差 ${hrs}h ${mins}m';
-    return '還差 ${mins}m';
+    return GoalProgressService.buildProgress(
+      goal: goal,
+      now: DateTime.now(),
+      sessions: ref.read(sessionsProvider),
+      runningTimer: RunningTimerSnapshot(
+        isRunning: timerState.isRunning,
+        category: timerState.category,
+        startTime: timerState.startTime,
+        baseSeconds: timerState.baseSeconds,
+        currentElapsed: timerState.currentElapsed,
+      ),
+    ).remainingText;
   }
 
   Map<String, String> getRecords(Goal goal) {
-    if (goal.completionHistory.isEmpty) return {
-      'historical': '尚無紀錄', 
-      'monthly': '尚無紀錄',
-      'historical_date': '',
-      'monthly_date': '',
-    };
-    
-    final sortedDates = goal.completionHistory.keys.toList()..sort();
-    final unit = goal.period == GoalPeriod.daily ? '天' : goal.period == GoalPeriod.weekly ? '週' : goal.period == GoalPeriod.monthly ? '月' : '次';
-
-    if (sortedDates.isEmpty) return {
-      'historical': '0 $unit連續', 
-      'monthly': '0 $unit連續', 
-      'historical_date': '', 
-      'monthly_date': ''
-    };
-
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    // 取得起始日
-    DateTime cursor = goal.startDate;
-    final firstRecord = DateTime.parse(sortedDates.first);
-    if (firstRecord.isBefore(cursor)) cursor = firstRecord;
-    
-    // 根據週期正規化起始點
-    if (goal.period == GoalPeriod.weekly) {
-      cursor = cursor.subtract(Duration(days: cursor.weekday - 1));
-    } else if (goal.period == GoalPeriod.monthly) {
-      cursor = DateTime(cursor.year, cursor.month, 1);
-    }
-    cursor = DateTime(cursor.year, cursor.month, cursor.day);
-
-    int maxAllStreak = 0;
-    int currentAllStreak = 0;
-    String maxAllEndDate = '';
-
-    int maxMonthStreak = 0;
-    int currentMonthStreak = 0;
-    String maxMonthEndDate = '';
-
-    while (!cursor.isAfter(now)) {
-      int totalInPeriod = 0;
-      DateTime periodEnd;
-      String currentPeriodEndKey = '';
-
-      if (goal.period == GoalPeriod.weekly) {
-        periodEnd = cursor.add(const Duration(days: 6));
-        for (int i = 0; i < 7; i++) {
-          final d = cursor.add(Duration(days: i));
-          final key = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-          totalInPeriod += goal.completionHistory[key] ?? 0;
-        }
-        currentPeriodEndKey = '${periodEnd.year}-${periodEnd.month.toString().padLeft(2, '0')}-${periodEnd.day.toString().padLeft(2, '0')}';
-      } else if (goal.period == GoalPeriod.monthly) {
-        periodEnd = DateTime(cursor.year, cursor.month + 1, 0);
-        final days = periodEnd.day;
-        for (int i = 0; i < days; i++) {
-          final d = cursor.add(Duration(days: i));
-          final key = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-          totalInPeriod += goal.completionHistory[key] ?? 0;
-        }
-        currentPeriodEndKey = '${cursor.year}-${cursor.month.toString().padLeft(2, '0')}';
-      } else {
-        final key = '${cursor.year}-${cursor.month.toString().padLeft(2, '0')}-${cursor.day.toString().padLeft(2, '0')}';
-        totalInPeriod = goal.completionHistory[key] ?? 0;
-        currentPeriodEndKey = key;
-        periodEnd = cursor;
-      }
-
-      final isMeetingGoal = totalInPeriod >= goal.targetSeconds;
-
-      if (isMeetingGoal) {
-        currentAllStreak++;
-        if (currentAllStreak > maxAllStreak) {
-          maxAllStreak = currentAllStreak;
-          maxAllEndDate = currentPeriodEndKey;
-        }
-      } else {
-        // 如果週期已結束且沒達標，則重置連續紀錄
-        if (periodEnd.isBefore(today)) {
-          currentAllStreak = 0;
-        }
-      }
-
-      // 本月最佳統計
-      if (cursor.year == now.year && cursor.month == now.month) {
-        if (isMeetingGoal) {
-          currentMonthStreak++;
-          if (currentMonthStreak > maxMonthStreak) {
-            maxMonthStreak = currentMonthStreak;
-            maxMonthEndDate = currentPeriodEndKey;
-          }
-        } else {
-          if (periodEnd.isBefore(today)) {
-            currentMonthStreak = 0;
-          }
-        }
-      }
-
-      if (goal.period == GoalPeriod.weekly) {
-        cursor = cursor.add(const Duration(days: 7));
-      } else if (goal.period == GoalPeriod.monthly) {
-        cursor = DateTime(cursor.year, cursor.month + 1, 1);
-      } else {
-        cursor = cursor.add(const Duration(days: 1));
-      }
-    }
-
-    return {
-      'historical': '$maxAllStreak $unit連續',
-      'historical_date': maxAllEndDate.isEmpty ? '尚無紀錄' : '最後達成: $maxAllEndDate',
-      'monthly': '$maxMonthStreak $unit連續',
-      'monthly_date': maxMonthEndDate.isEmpty ? '尚無紀錄' : '最後達成: $maxMonthEndDate',
-    };
+    return GoalProgressService.buildRecords(
+      goal: goal,
+      now: DateTime.now(),
+      sessions: ref.read(sessionsProvider),
+    );
   }
 
   Future<void> syncNow() async {

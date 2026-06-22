@@ -18,7 +18,7 @@ object TimerNotificationManager {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Me Time Timer (Silent)",
+                "Me Time 計時器",
                 NotificationManager.IMPORTANCE_MIN
             ).apply {
                 enableVibration(false)

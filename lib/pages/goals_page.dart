@@ -7,6 +7,7 @@ import '../theme/cartoon_theme.dart';
 import '../providers/task_goal_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/goal_order_provider.dart';
+import '../providers/current_focus_goals_provider.dart';
 import '../providers/firestore_provider.dart';
 import '../widgets/goal_progress_card.dart';
 
@@ -24,24 +25,6 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
        ref.read(goalProvider.notifier).recalculateAllGoalsHistory();
     });
-  }
-
-  // ── 用排序後的 ID 列表組合顯示順序
-  List<Goal> _sortedGoals(List<Goal> all, List<String> order) {
-    final map = {for (final g in all) g.id: g};
-    final sorted = <Goal>[];
-    // 先按已知順序加入
-    for (final id in order) {
-      if (map.containsKey(id)) sorted.add(map[id]!);
-    }
-    // 新增但還沒在順序列表中的目標加到末尾
-    for (final g in all) {
-      if (!order.contains(g.id)) {
-        sorted.add(g);
-        ref.read(goalOrderProvider.notifier).ensureContains(g.id);
-      }
-    }
-    return sorted;
   }
 
   void _onReorder(List<Goal> current, int oldIndex, int newIndex) {
@@ -91,7 +74,6 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
   // ──────────────────────────────────────────────────────
   void _showAddGoalDialog({String? initialCategory}) {
     final visibleCategories = ref.read(goalsVisibleCategoriesProvider);
-    final catColors = ref.read(categoryColorProvider);
     if (visibleCategories.isEmpty) { _showNoCategoryDialog(); return; }
 
     String selectedCategory = initialCategory ?? visibleCategories.first;
@@ -269,12 +251,13 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
                         ref.read(goalOrderProvider.notifier).ensureContains(newId);
                         _showApplyHistoryDialog(newId, selectedCategory);
                       } else {
-                        ref.read(taskGoalProvider.notifier).addGoal(
+                        final newId = ref.read(taskGoalProvider.notifier).addGoal(
                           selectedCategory, target, selectedPeriod,
                           title: selectedCategory, type: selectedType, startDate: selectedStartDate,
                           reminderTime: isReminderEnabled ? '${selectedReminderTime.hour.toString().padLeft(2, "0")}:${selectedReminderTime.minute.toString().padLeft(2, "0")}' : null,
                           isReminderEnabled: isReminderEnabled,
                         );
+                        ref.read(goalOrderProvider.notifier).ensureContains(newId);
                         _showSuccess('目標「$selectedCategory」已建立 ✨');
                       }
                     },
@@ -573,10 +556,7 @@ class _GoalsPageState extends ConsumerState<GoalsPage> {
   // ──────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final timeGoals  = ref.watch(visibleTimeGoalsProvider);
-    final taskGoals  = ref.watch(visibleTaskGoalsProvider);
-    final order      = ref.watch(goalOrderProvider);
-    final allGoals   = _sortedGoals([...timeGoals, ...taskGoals], order);
+    final allGoals = ref.watch(currentFocusGoalsProvider);
 
     return Scaffold(
       backgroundColor: Colors.transparent,

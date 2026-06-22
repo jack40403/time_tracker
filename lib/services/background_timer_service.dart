@@ -35,8 +35,8 @@ Future<void> initializeService() async {
   // Android notification channel setup
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     notificationChannelId, 
-    'Me Time Timer (Silent)',
-    description: 'This channel is used for the ongoing timer notification.',
+    'Me Time 計時器',
+    description: '顯示目前正在進行的計時。',
     importance: Importance.min,
     enableVibration: false,
     playSound: false,
@@ -88,7 +88,7 @@ void onStart(ServiceInstance service) async {
     try {
       final Map<String, dynamic> data = jsonDecode(handoffRaw);
       currentSeconds = data['seconds'] ?? 0;
-      category = data['category'] ?? 'Focus';
+      category = data['category'] ?? '專注';
       isRunning = data['isRunning'] ?? false;
       debugPrint('BackgroundService: Inherited state - ${currentSeconds}s, $category, running: $isRunning');
     } catch (e) {

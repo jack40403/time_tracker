@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../providers/timer_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/session_provider.dart';
-import '../providers/goal_reminder_provider.dart';
+import '../providers/current_focus_goals_provider.dart';
 import '../widgets/category_dialogs.dart';
 import '../helpers/responsive_helper.dart';
 import '../theme/cartoon_theme.dart';
@@ -90,7 +90,7 @@ class HomePage extends ConsumerWidget {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24.0),
                     child: Text(
-                      'SELECT CATEGORY',
+                      '選擇計時項目',
                       style: GoogleFonts.getFont(
                         t.fontBody,
                         fontSize: 16,
@@ -147,8 +147,9 @@ class HomePage extends ConsumerWidget {
   }
 
   Widget _buildGoalReminderPanel(BuildContext context, WidgetRef ref, AppTheme t) {
-    final goals = ref.watch(goalReminderProvider);
+    final goals = ref.watch(currentFocusGoalProgressProvider);
     final visible = goals.take(3).toList();
+    final remaining = goals.where((goal) => !goal.isCompleted).length;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -163,12 +164,12 @@ class HomePage extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _ThemedSectionLabel(
-              text: 'CURRENT GOALS',
+              text: '目前專注目標',
               textColor: t.mute,
               trailing: Text(
-                goals.isEmpty ? 'Complete' : '${goals.length} left',
+                goals.isEmpty ? '尚無目標' : '剩餘 $remaining 個',
                 style: TextStyle(
-                  color: goals.isEmpty ? Colors.green : t.appBarInk,
+                  color: remaining == 0 && goals.isNotEmpty ? Colors.green : t.appBarInk,
                   fontWeight: FontWeight.w800,
                   fontSize: 12,
                 ),
@@ -182,7 +183,7 @@ class HomePage extends ConsumerWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'All goals are complete for this period.',
+                      '目前沒有需要顯示的專注目標。',
                       style: TextStyle(color: t.ink, fontWeight: FontWeight.w700),
                     ),
                   ),
@@ -252,13 +253,13 @@ class HomePage extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _ThemedSectionLabel(
-            text: 'Category List (drag to reorder)',
+            text: '計時項目（拖曳可排序）',
             textColor: t.mute,
             trailing: Row(
               children: [
                 GestureDetector(
                   onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Long press a category to edit it.')),
+                    const SnackBar(content: Text('長按項目即可編輯。')),
                   ),
                   child: Container(
                     padding: const EdgeInsets.all(6),
@@ -317,7 +318,7 @@ class HomePage extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     child: Center(
                       child: Text(
-                        'No categories yet. Tap + to add one.',
+                        '尚無計時項目，點擊＋新增。',
                         style: TextStyle(color: t.mute, fontSize: 13),
                       ),
                     ),
@@ -395,7 +396,7 @@ class HomePage extends ConsumerWidget {
                           border: Border.all(color: t.surface.withOpacity(0.4), width: 1),
                         ),
                         child: Text(
-                          '${(elapsed / 60).floor()}m',
+                          '${(elapsed / 60).floor()} 分',
                           style: TextStyle(fontSize: 11, color: t.chipInkSel, fontWeight: FontWeight.bold),
                         ),
                       );

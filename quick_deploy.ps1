@@ -1,5 +1,7 @@
 # Me Time - local deploy script
 
+Set-Location $PSScriptRoot
+
 Write-Host "--- [1/6] Preparing release version... ---" -ForegroundColor Cyan
 $pubspecPath = "pubspec.yaml"
 $keyPropertiesPath = "android/key.properties"

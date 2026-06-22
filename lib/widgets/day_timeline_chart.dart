@@ -90,7 +90,7 @@ class DayTimelineChart extends StatelessWidget {
                         child: Tooltip(
                           triggerMode: TooltipTriggerMode.tap,
                           preferBelow: false,
-                          message: '${s.category}\n$startStr - $endStr · ${(s.durationSeconds~/60)}m',
+                          message: '${s.category}\n$startStr - $endStr · ${s.durationSeconds ~/ 60} 分',
                           child: Container(
                             decoration: BoxDecoration(
                               color: color,

@@ -6,40 +6,26 @@ import '../models/goal.dart';
 import '../models/goal_progress.dart';
 import '../services/goal_progress_service.dart';
 import '../services/goal_reminder_notification_service.dart';
-import 'goal_provider.dart';
-import 'session_provider.dart';
+import '../services/goal_action_service.dart';
+import 'current_focus_goals_provider.dart';
 import 'task_goal_provider.dart';
-import 'timer_provider.dart';
 
 class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
   Timer? _pendingActionPoller;
   bool _processingActions = false;
   bool _refreshQueued = false;
   DateTime? _lastNotificationRefresh;
+  int _totalGoals = 0;
+  String? _lastDateKey;
 
   @override
   List<GoalProgress> build() {
-    final timeGoals = ref.watch(goalProvider);
-    final taskGoals = ref.watch(taskGoalProvider);
-    final sessions = ref.watch(sessionsProvider);
-    final timerState = ref.watch(timerProvider);
-    final now = DateTime.now();
+    final allProgresses = ref.watch(currentFocusGoalProgressProvider);
+    final progresses = ref.watch(incompleteFocusGoalProgressProvider);
+    _totalGoals = allProgresses.length;
+    _lastDateKey ??= GoalProgressService.dateKey(DateTime.now());
 
     _ensurePendingActionPoller();
-
-    final progresses = GoalProgressService.getVisibleReminderGoals(
-      timeGoals: timeGoals,
-      taskGoals: taskGoals,
-      sessions: sessions,
-      now: now,
-      runningTimer: RunningTimerSnapshot(
-        isRunning: timerState.isRunning,
-        category: timerState.category,
-        startTime: timerState.startTime,
-        baseSeconds: timerState.baseSeconds,
-        currentElapsed: timerState.currentElapsed,
-      ),
-    );
 
     _schedulePendingActionProcessing();
     _scheduleNotificationRefresh(progresses);
@@ -48,13 +34,22 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
 
   Future<void> refreshNow() async {
     final progresses = state;
-    await GoalReminderNotificationService.showOngoing(progresses);
+    await GoalReminderNotificationService.showOngoing(
+      progresses,
+      totalGoals: _totalGoals,
+    );
     _lastNotificationRefresh = DateTime.now();
   }
 
   void _ensurePendingActionPoller() {
     if (_pendingActionPoller != null) return;
     _pendingActionPoller = Timer.periodic(const Duration(seconds: 1), (_) {
+      final dateKey = GoalProgressService.dateKey(DateTime.now());
+      if (dateKey != _lastDateKey) {
+        _lastDateKey = dateKey;
+        ref.invalidate(currentFocusGoalProgressProvider);
+        ref.invalidate(incompleteFocusGoalProgressProvider);
+      }
       _schedulePendingActionProcessing();
       _scheduleNotificationRefresh(state);
     });
@@ -75,7 +70,10 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
     _refreshQueued = true;
     Future.microtask(() async {
       try {
-        await GoalReminderNotificationService.showOngoing(progresses);
+        await GoalReminderNotificationService.showOngoing(
+          progresses,
+          totalGoals: _totalGoals,
+        );
         _lastNotificationRefresh = DateTime.now();
       } finally {
         _refreshQueued = false;
@@ -88,10 +86,13 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
     _processingActions = true;
     Future.microtask(() async {
       try {
+        if (await GoalActionService.takeRefreshRequest()) {
+          await ref.read(taskGoalProvider.notifier).reloadFromStorage();
+        }
         final actions = await GoalReminderNotificationService.takePendingActions();
         if (actions.isEmpty) return;
         for (final action in actions) {
-          _applyAction(action);
+          await _applyAction(action);
         }
       } finally {
         _processingActions = false;
@@ -99,7 +100,7 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
     });
   }
 
-  void _applyAction(GoalReminderAction action) {
+  Future<void> _applyAction(GoalReminderAction action) async {
     final taskGoals = ref.read(taskGoalProvider);
     Goal? goal;
     for (final candidate in taskGoals) {
@@ -116,15 +117,15 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
     final notifier = ref.read(taskGoalProvider.notifier);
 
     if (action.action == 'complete' && goal.type == GoalType.binary) {
-      notifier.setManualValue(goal.id, now, 1);
+      await notifier.setManualValue(goal.id, now, 1);
       return;
     }
 
     if (goal.type != GoalType.task) return;
     if (action.action == 'increment') {
-      notifier.setManualValue(goal.id, now, current + 1);
+      await notifier.setManualValue(goal.id, now, current + 1);
     } else if (action.action == 'decrement') {
-      notifier.setManualValue(goal.id, now, current > 0 ? current - 1 : 0);
+      await notifier.setManualValue(goal.id, now, current > 0 ? current - 1 : 0);
     }
   }
 }
