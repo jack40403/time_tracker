@@ -71,9 +71,9 @@ class GoalReminderNotificationService {
               goalId: progress.goal.id,
               title: progress.goal.title,
               type: progress.goal.type,
+              period: progress.goal.period,
               current: progress.currentValue,
               target: progress.targetValue,
-              valueText: progress.valueText,
             ))
         .toList();
     await _saveSnapshot(rows, totalGoals);
@@ -89,20 +89,11 @@ class GoalReminderNotificationService {
       return;
     }
 
-    final visible = rows.take(4).toList();
-    final lines = visible.map((row) {
-      if (row.type == GoalType.binary) {
-        return '○ ${row.title}';
-      }
-      return '${row.title}  ${row.valueText}';
-    }).join('\n');
-    final hiddenCount = rows.length - visible.length;
-    final expandedText = hiddenCount > 0 ? '$lines\n另有 $hiddenCount 個目標' : lines;
     final completed = (totalGoals - rows.length).clamp(0, totalGoals);
-    final summary = '剩餘 ${rows.length} 個｜完成 $completed / $totalGoals';
+    final summary = '剩餘 ${rows.length} 項｜完成 $completed / $totalGoals';
 
     _GoalNotificationRow? firstActionGoal;
-    for (final row in visible) {
+    for (final row in rows) {
       if (row.type == GoalType.binary || row.type == GoalType.task) {
         firstActionGoal = row;
         break;
@@ -145,9 +136,9 @@ class GoalReminderNotificationService {
       onlyAlertOnce: true,
       silent: true,
       showWhen: false,
-      styleInformation: BigTextStyleInformation(
-        expandedText,
-        contentTitle: '今日專注目標',
+      styleInformation: InboxStyleInformation(
+        rows.map((row) => row.displayLine).toList(),
+        contentTitle: '專注目標',
         summaryText: summary,
       ),
       actions: actions,
@@ -155,9 +146,10 @@ class GoalReminderNotificationService {
 
     await _notifications.show(
       notificationId,
-      '今日專注目標',
+      '專注目標',
       summary,
       NotificationDetails(android: details),
+      payload: 'open_focus_goals',
     );
   }
 
@@ -168,7 +160,12 @@ class GoalReminderNotificationService {
 
   static Future<void> handleNotificationResponse(NotificationResponse response) async {
     final actionId = response.actionId;
-    if (actionId == null || !actionId.startsWith('goal_')) return;
+    if (actionId == null || !actionId.startsWith('goal_')) {
+      if (response.payload == 'open_focus_goals') {
+        await requestOpenFocusGoals();
+      }
+      return;
+    }
 
     final parsed = _parseActionId(actionId);
     if (parsed == null) return;
@@ -244,12 +241,7 @@ class GoalReminderNotificationService {
       final index = rows.indexWhere((row) => row.goalId == result.goal.id);
       if (index >= 0) {
         final old = rows[index];
-        final updated = old.copyWith(
-          current: result.currentValue,
-          valueText: old.type == GoalType.binary
-              ? '已完成'
-              : '${result.currentValue} / ${old.target}',
-        );
+        final updated = old.copyWith(current: result.currentValue);
         if (result.currentValue >= old.target) {
           rows.removeAt(index);
         } else {
@@ -270,33 +262,60 @@ class GoalReminderNotificationService {
     final goalId = actionId.substring(separator + 1);
     return GoalReminderAction(goalId: goalId, action: action);
   }
+
+  static const String _openFocusGoalsKey = 'goal_reminder_open_focus_goals';
+
+  static Future<void> requestOpenFocusGoals() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_openFocusGoalsKey, true);
+  }
+
+  static Future<bool> takeOpenFocusGoalsRequest() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    final requested = prefs.getBool(_openFocusGoalsKey) ?? false;
+    if (requested) await prefs.remove(_openFocusGoalsKey);
+    return requested;
+  }
 }
 
 class _GoalNotificationRow {
   final String goalId;
   final String title;
   final GoalType type;
+  final GoalPeriod period;
   final int current;
   final int target;
-  final String valueText;
 
   const _GoalNotificationRow({
     required this.goalId,
     required this.title,
     required this.type,
+    required this.period,
     required this.current,
     required this.target,
-    required this.valueText,
   });
 
-  _GoalNotificationRow copyWith({int? current, String? valueText}) {
+  String get displayTitle => period == GoalPeriod.daily
+      ? title
+      : '$title（${_periodName(period)}）';
+
+  String get displayLine {
+    if (type == GoalType.binary) return '☐ $displayTitle';
+    final unit = type == GoalType.time ? '分鐘' : '次';
+    final currentValue = type == GoalType.time ? current ~/ 60 : current;
+    final targetValue = type == GoalType.time ? target ~/ 60 : target;
+    return '$displayTitle\n$currentValue $unit / ${_periodLabel(period)} $targetValue $unit';
+  }
+
+  _GoalNotificationRow copyWith({int? current}) {
     return _GoalNotificationRow(
       goalId: goalId,
       title: title,
       type: type,
+      period: period,
       current: current ?? this.current,
       target: target,
-      valueText: valueText ?? this.valueText,
     );
   }
 
@@ -304,9 +323,9 @@ class _GoalNotificationRow {
         'goalId': goalId,
         'title': title,
         'type': type.name,
+        'period': period.name,
         'current': current,
         'target': target,
-        'valueText': valueText,
       };
 
   factory _GoalNotificationRow.fromJson(Map<String, dynamic> json) {
@@ -315,13 +334,32 @@ class _GoalNotificationRow {
       (value) => value.name == typeName,
       orElse: () => GoalType.time,
     );
+    final periodName = json['period']?.toString();
+    final period = GoalPeriod.values.firstWhere(
+      (value) => value.name == periodName,
+      orElse: () => GoalPeriod.daily,
+    );
     return _GoalNotificationRow(
       goalId: json['goalId']?.toString() ?? '',
       title: json['title']?.toString() ?? '',
       type: type,
+      period: period,
       current: (json['current'] as num?)?.toInt() ?? 0,
       target: (json['target'] as num?)?.toInt() ?? 1,
-      valueText: json['valueText']?.toString() ?? '',
     );
   }
+
+  static String _periodName(GoalPeriod period) => switch (period) {
+        GoalPeriod.daily => '每日',
+        GoalPeriod.weekly => '每週',
+        GoalPeriod.monthly => '每月',
+        GoalPeriod.yearly => '每年',
+      };
+
+  static String _periodLabel(GoalPeriod period) => switch (period) {
+        GoalPeriod.daily => '今日',
+        GoalPeriod.weekly => '本週',
+        GoalPeriod.monthly => '本月',
+        GoalPeriod.yearly => '本年',
+      };
 }

@@ -9,18 +9,16 @@ import 'session_provider.dart';
 import 'task_goal_provider.dart';
 import 'timer_provider.dart';
 
-/// The single source of truth for goals shown on the focus-goals screen.
-final currentFocusGoalsProvider = Provider<List<Goal>>((ref) {
-  final goals = <Goal>[
-    ...ref.watch(visibleTimeGoalsProvider),
-    ...ref.watch(visibleTaskGoalsProvider),
-  ];
-  final order = ref.watch(goalOrderProvider);
-  final now = DateTime.now();
-
-  final visible = goals.where((goal) {
-    return !GoalProgressService.isBeforeGoalStart(goal, now);
-  }).toList();
+/// Shared filtering and sorting for every surface that presents focus goals.
+List<Goal> getCurrentFocusGoals({
+  required List<Goal> timeGoals,
+  required List<Goal> taskGoals,
+  required List<String> order,
+  required DateTime now,
+}) {
+  final visible = <Goal>[...timeGoals, ...taskGoals]
+      .where((goal) => !GoalProgressService.isBeforeGoalStart(goal, now))
+      .toList();
 
   final byId = {for (final goal in visible) goal.id: goal};
   final sorted = <Goal>[];
@@ -30,6 +28,16 @@ final currentFocusGoalsProvider = Provider<List<Goal>>((ref) {
   }
   sorted.addAll(byId.values);
   return sorted;
+}
+
+/// The single source of truth for goals shown in the app and notification.
+final currentFocusGoalsProvider = Provider<List<Goal>>((ref) {
+  return getCurrentFocusGoals(
+    timeGoals: ref.watch(visibleTimeGoalsProvider),
+    taskGoals: ref.watch(visibleTaskGoalsProvider),
+    order: ref.watch(goalOrderProvider),
+    now: DateTime.now(),
+  );
 });
 
 final currentFocusGoalProgressProvider = Provider<List<GoalProgress>>((ref) {

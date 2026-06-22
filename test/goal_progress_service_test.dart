@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker/models/goal.dart';
 import 'package:time_tracker/models/time_session.dart';
+import 'package:time_tracker/providers/current_focus_goals_provider.dart';
 import 'package:time_tracker/services/goal_progress_service.dart';
 
 void main() {
@@ -132,5 +133,24 @@ void main() {
     );
 
     expect(records['historical'], '1 天連續');
+  });
+
+  test('目前專注目標會套用開始日期與共用排序', () {
+    final now = taipei(2026, 6, 10, 9);
+    final first = goal(startDate: taipei(2026, 6, 1)).copyWith(id: 'first');
+    final future = goal(startDate: taipei(2026, 6, 11)).copyWith(id: 'future');
+    final task = goal(startDate: taipei(2026, 6, 1)).copyWith(
+      id: 'task',
+      type: GoalType.task,
+    );
+
+    final goals = getCurrentFocusGoals(
+      timeGoals: [first, future],
+      taskGoals: [task],
+      order: const ['task', 'first'],
+      now: now,
+    );
+
+    expect(goals.map((goal) => goal.id), ['task', 'first']);
   });
 }

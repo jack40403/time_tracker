@@ -1277,7 +1277,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             TextField(
               controller: controller,
               decoration: const InputDecoration(
-                hintText: 'RESET',
+                hintText: '重設',
                 border: OutlineInputBorder(),
               ),
               textAlign: TextAlign.center,

@@ -4,7 +4,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../providers/timer_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/session_provider.dart';
-import '../providers/current_focus_goals_provider.dart';
 import '../widgets/category_dialogs.dart';
 import '../helpers/responsive_helper.dart';
 import '../theme/cartoon_theme.dart';
@@ -45,8 +44,6 @@ class HomePage extends ConsumerWidget {
         SliverToBoxAdapter(child: const SizedBox(height: 20)),
         SliverToBoxAdapter(child: _buildHeader(context, ref, t)),
         SliverToBoxAdapter(child: const SizedBox(height: 16)),
-        SliverToBoxAdapter(child: _buildGoalReminderPanel(context, ref, t)),
-        SliverToBoxAdapter(child: const SizedBox(height: 16)),
         SliverToBoxAdapter(child: _buildCategoryList(context, ref, t)),
         SliverToBoxAdapter(child: const SizedBox(height: 10)),
         SliverToBoxAdapter(child: _buildTimerCard(context, ref, t)),
@@ -85,8 +82,6 @@ class HomePage extends ConsumerWidget {
                   const SizedBox(height: 48),
                   _buildHeader(context, ref, t),
                   const SizedBox(height: 32),
-                  _buildGoalReminderPanel(context, ref, t),
-                  const SizedBox(height: 24),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24.0),
                     child: Text(
@@ -142,103 +137,6 @@ class HomePage extends ConsumerWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildGoalReminderPanel(BuildContext context, WidgetRef ref, AppTheme t) {
-    final goals = ref.watch(currentFocusGoalProgressProvider);
-    final visible = goals.take(3).toList();
-    final remaining = goals.where((goal) => !goal.isCompleted).length;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: t.surface.withOpacity(0.18),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: t.ink.withOpacity(0.25), width: 2.5),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _ThemedSectionLabel(
-              text: '目前專注目標',
-              textColor: t.mute,
-              trailing: Text(
-                goals.isEmpty ? '尚無目標' : '剩餘 $remaining 個',
-                style: TextStyle(
-                  color: remaining == 0 && goals.isNotEmpty ? Colors.green : t.appBarInk,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            if (goals.isEmpty)
-              Row(
-                children: [
-                  const Icon(Icons.check_circle_rounded, color: Colors.green, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '目前沒有需要顯示的專注目標。',
-                      style: TextStyle(color: t.ink, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ],
-              )
-            else
-              ...visible.map((progress) {
-                final pct = (progress.progress * 100).round().clamp(0, 100);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              progress.goal.title,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: t.ink,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            progress.valueText,
-                            style: TextStyle(
-                              color: t.mute,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(999),
-                        child: LinearProgressIndicator(
-                          value: progress.progress,
-                          minHeight: 7,
-                          backgroundColor: t.ink.withOpacity(0.12),
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            pct >= 80 ? Colors.green : t.accent,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-          ],
-        ),
       ),
     );
   }
