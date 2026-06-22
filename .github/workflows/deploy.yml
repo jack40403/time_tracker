@@ -38,11 +38,15 @@ jobs:
           echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> android/key.properties
           echo "storeFile=upload-keystore.jks" >> android/key.properties
 
+      - name: Calculate build number
+        run: |
+          BUILD_NUMBER=$(date +%s)
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
+          echo "Using Android versionCode/buildNumber: $BUILD_NUMBER"
+
       - name: Build APK
         run: |
-          BASE_BUILD=$(grep '^version:' pubspec.yaml | cut -d'+' -f2 | tr -d '\r')
-          NEW_BUILD=$((BASE_BUILD + GITHUB_RUN_NUMBER))
-          flutter build apk --release --build-number=$NEW_BUILD
+          flutter build apk --release --build-number=$BUILD_NUMBER
 
       - name: Build web
         run: flutter build web --release --pwa-strategy=none
@@ -54,15 +58,13 @@ jobs:
         run: |
           FULL_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d '\r')
           VERSION_NAME=$(echo "$FULL_VERSION" | cut -d'+' -f1)
-          BASE_BUILD=$(echo "$FULL_VERSION" | cut -d'+' -f2)
-          NEW_BUILD=$((BASE_BUILD + GITHUB_RUN_NUMBER))
           TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
           cat > build/web/version.json <<EOF
           {
             "version": "$VERSION_NAME",
-            "buildNumber": "$NEW_BUILD",
+            "buildNumber": "$BUILD_NUMBER",
             "url": "https://metimegoalgoal.web.app/app-release.apk",
-            "changelog": "v$VERSION_NAME (Build $NEW_BUILD): GitHub Actions 自動構建更新",
+            "changelog": "v$VERSION_NAME (Build $BUILD_NUMBER): GitHub Actions 自動構建更新",
             "timestamp": "$TIMESTAMP"
           }
           EOF
