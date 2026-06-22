@@ -1,60 +1,78 @@
-﻿# Elite Time Tracker - Pro Deploy Script v3 (Ultra Robust)
+# Me Time - local deploy script
 
-Write-Host "--- [1/5] Building Android APK... ---" -ForegroundColor Cyan
-C:\flutter\bin\flutter.bat build apk --release
+Write-Host "--- [1/6] Preparing release version... ---" -ForegroundColor Cyan
+$pubspecPath = "pubspec.yaml"
+$pubContent = Get-Content $pubspecPath -Raw
 
-Write-Host "--- [2/5] Cleaning and Preparing Web Folder... ---" -ForegroundColor Cyan
-if (Test-Path "build/web") { Remove-Item -Recurse -Force "build/web" }
-
-Write-Host "--- [3/5] Extracting Version and Updating pubspec.yaml... ---" -ForegroundColor Cyan
-$pubContent = Get-Content "pubspec.yaml" -Raw
-if ($pubContent -match "version: (\d+\.\d+\.\d+)\+(\d+)") {
-    $versionName = $Matches[1]
-    $buildNumber = [int]$Matches[2] + 1
-    $newVersion = "$versionName+$buildNumber"
-    $pubContent = $pubContent -replace "version: \d+\.\d+\.\d+\+\d+", "version: $newVersion"
-    $pubContent | Out-File "pubspec.yaml" -Encoding UTF8
-    Write-Host "New Version: $newVersion" -ForegroundColor Yellow
+if ($pubContent -notmatch "version: (\d+\.\d+\.\d+)\+(\d+)") {
+    throw "Cannot find Flutter version in pubspec.yaml. Expected format: version: x.y.z+build"
 }
 
-Write-Host "--- [4/5] Building Web... ---" -ForegroundColor Cyan
-C:\flutter\bin\flutter.bat build web --release --pwa-strategy=none
+$versionName = $Matches[1]
+$buildNumber = [int]$Matches[2]
 
-Write-Host "--- [5/5] POST-BUILD SYNC (THE FORCE STEP) ---" -ForegroundColor Cyan
-# 1. 確保圖示絕對正確 (從 assets 拷貝到 build/web/icons)
+if ($buildNumber -lt 135) {
+    $buildNumber = 135
+} else {
+    $buildNumber += 1
+}
+
+$newVersion = "$versionName+$buildNumber"
+$pubContent = $pubContent -replace "version: \d+\.\d+\.\d+\+\d+", "version: $newVersion"
+$pubContent | Out-File $pubspecPath -Encoding UTF8
+Write-Host "Using release version: $newVersion" -ForegroundColor Yellow
+
+Write-Host "--- [2/6] Building Android APK... ---" -ForegroundColor Cyan
+C:\flutter\bin\flutter.bat build apk --release --build-name=$versionName --build-number=$buildNumber
+if ($LASTEXITCODE -ne 0) { throw "APK build failed." }
+
+Write-Host "--- [3/6] Cleaning and preparing web folder... ---" -ForegroundColor Cyan
+if (Test-Path "build/web") { Remove-Item -Recurse -Force "build/web" }
+
+Write-Host "--- [4/6] Building Web... ---" -ForegroundColor Cyan
+C:\flutter\bin\flutter.bat build web --release --pwa-strategy=none
+if ($LASTEXITCODE -ne 0) { throw "Web build failed." }
+
+Write-Host "--- [5/6] Syncing APK and metadata... ---" -ForegroundColor Cyan
 $iconPath = "assets/icon/app_icon.png"
 if (Test-Path $iconPath) {
-    if (!(Test-Path "build/web/icons")) { New-Item -ItemType Directory "build/web/icons" -Force }
+    if (!(Test-Path "build/web/icons")) { New-Item -ItemType Directory "build/web/icons" -Force | Out-Null }
     Copy-Item $iconPath "build/web/icons/Icon-192.png" -Force
     Copy-Item $iconPath "build/web/icons/Icon-512.png" -Force
     Copy-Item $iconPath "build/web/icons/Icon-maskable-192.png" -Force
     Copy-Item $iconPath "build/web/icons/Icon-maskable-512.png" -Force
     Copy-Item $iconPath "build/web/icons/final_logo.png" -Force
-    Write-Host "✅ Icons synced to build folder." -ForegroundColor Green
+    Write-Host "Icons synced to build folder." -ForegroundColor Green
 }
 
-# 2. 確保 APK 絕對正確
 $apkPath = "build/app/outputs/flutter-apk/app-release.apk"
-$versionedApkName = "app-v$($versionName.Replace('.', '_'))-$buildNumber.apk"
-if (Test-Path $apkPath) {
-    Copy-Item $apkPath "build/web/$versionedApkName" -Force
-    Copy-Item $apkPath "build/web/app-release.apk" -Force
-    Write-Host "?? APK synced as $versionedApkName" -ForegroundColor Green
+$gitHash = git rev-parse --short HEAD
+$versionedApkName = "me-time-v$versionName-$buildNumber-$gitHash.apk"
+
+if (!(Test-Path $apkPath)) {
+    throw "APK not found: $apkPath"
 }
 
-# 3. 生成正確的 version.json (加入時間戳防止快取)
+Copy-Item $apkPath "build/web/$versionedApkName" -Force
+Copy-Item $apkPath "build/web/app-release.apk" -Force
+Write-Host "APK synced as $versionedApkName and app-release.apk" -ForegroundColor Green
+
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 $jsonObj = @{
-  version = $versionName
-  buildNumber = $buildNumber.ToString()
-  url = "https://metimegoalgoal.web.app/$versionedApkName"
-  changelog = "v$versionName (Build $buildNumber): 新增 5 大外觀主題選擇與豪華開場動畫系統，優化歷史編輯與同步機制。"
-  timestamp = $timestamp
+    version = $versionName
+    buildNumber = $buildNumber.ToString()
+    url = "https://metimegoalgoal.web.app/$versionedApkName"
+    fallbackUrl = "https://metimegoalgoal.web.app/app-release.apk"
+    apkFileName = $versionedApkName
+    changelog = "v$versionName (Build $buildNumber): Local release build."
+    timestamp = $timestamp
 }
 $versionJson = $jsonObj | ConvertTo-Json
 $versionJson | Out-File "build/web/version.json" -Encoding UTF8
 Write-Host "version.json generated: v$versionName+$buildNumber" -ForegroundColor Green
 
-Write-Host "--- FINISHING: Deploying to Firebase ---" -ForegroundColor Cyan
+Write-Host "--- [6/6] Deploying to Firebase Hosting... ---" -ForegroundColor Cyan
 firebase.cmd deploy --only hosting
-Write-Host "--- DONE! Please refresh your browser (Ctrl+F5) ---" -ForegroundColor Magenta
+if ($LASTEXITCODE -ne 0) { throw "Firebase deploy failed." }
+
+Write-Host "--- DONE. Refresh browser with Ctrl+F5. ---" -ForegroundColor Magenta

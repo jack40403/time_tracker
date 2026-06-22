@@ -1,1 +1,9 @@
-{ "version": "1.1.0+47", "buildNumber": "47", "url": "https://metimegoalgoal.web.app/EliteTimeTracker_b47.apk", "changelog": "v1.1.0 Filter History Overview (Build 47 - Hide archived items)" }
+{
+  "version": "1.1.1",
+  "buildNumber": "135",
+  "url": "https://metimegoalgoal.web.app/app-release.apk",
+  "fallbackUrl": "https://metimegoalgoal.web.app/app-release.apk",
+  "apkFileName": "app-release.apk",
+  "changelog": "v1.1.1 (Build 135): Version metadata update.",
+  "timestamp": "2026-06-22 00:00:00"
+}

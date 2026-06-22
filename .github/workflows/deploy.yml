@@ -38,33 +38,41 @@ jobs:
           echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> android/key.properties
           echo "storeFile=upload-keystore.jks" >> android/key.properties
 
-      - name: Calculate build number
+      - name: Calculate release metadata
         run: |
+          FULL_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d '\r')
+          VERSION_NAME=$(echo "$FULL_VERSION" | cut -d'+' -f1)
           BUILD_NUMBER=$(date +%s)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          APK_FILE_NAME="me-time-v${VERSION_NAME}-${BUILD_NUMBER}-${SHORT_SHA}.apk"
+          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
-          echo "Using Android versionCode/buildNumber: $BUILD_NUMBER"
+          echo "APK_FILE_NAME=$APK_FILE_NAME" >> $GITHUB_ENV
+          echo "Using versionName/versionCode: $VERSION_NAME+$BUILD_NUMBER"
 
       - name: Build APK
         run: |
-          flutter build apk --release --build-number=$BUILD_NUMBER
+          flutter build apk --release --build-name=$VERSION_NAME --build-number=$BUILD_NUMBER
 
       - name: Build web
         run: flutter build web --release --pwa-strategy=none
 
       - name: Copy APK into web build
-        run: cp build/app/outputs/flutter-apk/app-release.apk build/web/app-release.apk
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk "build/web/$APK_FILE_NAME"
+          cp build/app/outputs/flutter-apk/app-release.apk build/web/app-release.apk
 
       - name: Generate version.json
         run: |
-          FULL_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d '\r')
-          VERSION_NAME=$(echo "$FULL_VERSION" | cut -d'+' -f1)
           TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
           cat > build/web/version.json <<EOF
           {
             "version": "$VERSION_NAME",
             "buildNumber": "$BUILD_NUMBER",
-            "url": "https://metimegoalgoal.web.app/app-release.apk",
-            "changelog": "v$VERSION_NAME (Build $BUILD_NUMBER): GitHub Actions 自動構建更新",
+            "url": "https://metimegoalgoal.web.app/$APK_FILE_NAME",
+            "fallbackUrl": "https://metimegoalgoal.web.app/app-release.apk",
+            "apkFileName": "$APK_FILE_NAME",
+            "changelog": "v$VERSION_NAME (Build $BUILD_NUMBER): GitHub Actions release build.",
             "timestamp": "$TIMESTAMP"
           }
           EOF

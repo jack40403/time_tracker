@@ -59,6 +59,7 @@ class UpdateService {
 
       // 2. 獲取本地版本
       final packageInfo = await PackageInfo.fromPlatform();
+      final currentVersionName = packageInfo.version;
       final currentBuildNumber = int.tryParse(packageInfo.buildNumber) ?? 0;
 
       // 3. 獲取遠端版本 (加入時間戳強制繞過快取)
@@ -71,7 +72,9 @@ class UpdateService {
         final remoteBuildNumber = int.tryParse(remoteInfo.buildNumber) ?? 0;
 
         // 4. 比對版號 (遠端 > 本地 則建議更新)
-        if (remoteBuildNumber > currentBuildNumber) {
+        if (remoteBuildNumber > currentBuildNumber ||
+            (remoteBuildNumber == currentBuildNumber &&
+                _compareVersionNames(remoteInfo.version, currentVersionName) > 0)) {
           return remoteInfo;
         }
       }
@@ -79,6 +82,32 @@ class UpdateService {
       debugPrint('UpdateService Error: $e');
     }
     return null;
+  }
+
+  static int _compareVersionNames(String remoteVersion, String currentVersion) {
+    final remoteParts = _parseVersionParts(remoteVersion);
+    final currentParts = _parseVersionParts(currentVersion);
+    final maxLength = remoteParts.length > currentParts.length
+        ? remoteParts.length
+        : currentParts.length;
+
+    for (var i = 0; i < maxLength; i++) {
+      final remotePart = i < remoteParts.length ? remoteParts[i] : 0;
+      final currentPart = i < currentParts.length ? currentParts[i] : 0;
+      if (remotePart != currentPart) {
+        return remotePart.compareTo(currentPart);
+      }
+    }
+    return 0;
+  }
+
+  static List<int> _parseVersionParts(String version) {
+    return version
+        .split('+')
+        .first
+        .split('.')
+        .map((part) => int.tryParse(part) ?? 0)
+        .toList();
   }
 
   static Future<void> ignoreToday() async {
