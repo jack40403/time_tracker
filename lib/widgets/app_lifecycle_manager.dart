@@ -29,20 +29,18 @@ class _AppLifecycleManagerState extends ConsumerState<AppLifecycleManager> with 
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // ??App ?脣? (paused) ?仃?餌暺?(inactive) ?孛?澆?甇?    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
       debugPrint('AppLifecycleManager: App entering background, triggering safety sync...');
-      
-      // 閫貊閮?蝝??甇?      ref.read(sessionsProvider.notifier).syncNow();
-      
-      // 閫貊隞餃??璅?甇?      ref.read(taskGoalProvider.notifier).syncNow();
+      unawaited(ref.read(sessionsProvider.notifier).syncNow());
+      unawaited(ref.read(goalProvider.notifier).syncNow());
+      unawaited(ref.read(taskGoalProvider.notifier).syncNow());
     } else if (state == AppLifecycleState.resumed) {
       debugPrint('AppLifecycleManager: App resumed, fetching absolute truth from cloud & background...');
       unawaited(ref.read(timerProvider.notifier).syncTimerFromServer());
       
-      // 2. 銝餃?敺蝡舀????唳??(蝜??砍敹怠?)
-      ref.read(sessionsProvider.notifier).forceSyncFromCloud();
-      ref.read(goalProvider.notifier).forceSyncFromCloud();
-      ref.read(taskGoalProvider.notifier).forceSyncFromCloud();
+      unawaited(ref.read(sessionsProvider.notifier).forceSyncFromCloud());
+      unawaited(ref.read(goalProvider.notifier).forceSyncFromCloud());
+      unawaited(ref.read(taskGoalProvider.notifier).forceSyncFromCloud());
     }
   }
 

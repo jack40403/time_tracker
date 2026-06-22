@@ -1,9 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../models/goal.dart';
+import 'goal_reminder_notification_service.dart';
+
+@pragma('vm:entry-point')
+void onNotificationResponse(NotificationResponse response) {
+  unawaited(GoalReminderNotificationService.handleNotificationResponse(response));
+}
 
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
@@ -27,7 +35,12 @@ class NotificationService {
       iOS: iosInit,
     );
 
-    await _notifications.initialize(initSettings);
+    await _notifications.initialize(
+      initSettings,
+      onDidReceiveNotificationResponse: onNotificationResponse,
+      onDidReceiveBackgroundNotificationResponse: onNotificationResponse,
+    );
+    await GoalReminderNotificationService.initialize();
   }
 
   static Future<void> scheduleGoalReminder(Goal goal) async {

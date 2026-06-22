@@ -9,13 +9,10 @@ import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'services/update_service.dart';
 import 'services/background_timer_service.dart';
 import 'services/notification_service.dart';
-import 'services/storage_service.dart';
 import 'providers/layout_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/goal_reminder_provider.dart';
 import 'firebase_options.dart';
-import 'pages/main_screen.dart';
-import 'widgets/background_wrapper.dart';
-import 'widgets/app_lifecycle_manager.dart';
 import 'widgets/splash_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'providers/app_theme_provider.dart';
@@ -48,11 +45,11 @@ void main() async {
   // Kotlin (TimerNotificationManager) shows the notification with native PendingIntents
   // so action buttons reliably reach TimerActionReceiver.
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-    const _timerNotifChannel = MethodChannel('timer_notification_channel');
+    const timerNotifChannel = MethodChannel('timer_notification_channel');
     FlutterBackgroundService().on('updateNotification').listen((data) async {
       if (data != null) {
         try {
-          await _timerNotifChannel.invokeMethod('show', {
+          await timerNotifChannel.invokeMethod('show', {
             'title': data['title'],
             'content': data['content'],
             'isRunning': data['isRunning'],
@@ -88,11 +85,12 @@ class TimeTrackerApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final themeMode = ref.watch(themeModeProvider);
+    ref.watch(themeModeProvider);
     final appTheme = ref.watch(currentAppThemeProvider);
+    ref.listen(goalReminderProvider, (_, _) {});
     // 每個 AppTheme 有固定設計亮度，強制 Material theme 跟著走，避免系統亮度不符造成文字撞背景
-    const _darkAppThemeIds = {'dark'};
-    final effectiveThemeMode = _darkAppThemeIds.contains(appTheme.id) ? ThemeMode.dark : ThemeMode.light;
+    const darkAppThemeIds = {'dark'};
+    final effectiveThemeMode = darkAppThemeIds.contains(appTheme.id) ? ThemeMode.dark : ThemeMode.light;
 
     final baseLightTextTheme = GoogleFonts.outfitTextTheme();
     final baseDarkTextTheme = GoogleFonts.outfitTextTheme(ThemeData.dark().textTheme);
