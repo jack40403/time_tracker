@@ -35,6 +35,13 @@ class NotificationService {
       iOS: iosInit,
     );
 
+    final launchDetails = await _notifications.getNotificationAppLaunchDetails();
+    if (GoalReminderNotificationService.isOpenPanelPayload(
+      launchDetails?.notificationResponse?.payload,
+    )) {
+      GoalReminderNotificationService.markOpenPanelAfterLaunch();
+    }
+
     await _notifications.initialize(
       initSettings,
       onDidReceiveNotificationResponse: onNotificationResponse,

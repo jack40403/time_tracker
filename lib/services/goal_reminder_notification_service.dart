@@ -4,8 +4,9 @@ import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatf
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../models/goal.dart';
+import '../navigation/app_navigator.dart';
 import '../models/goal_progress.dart';
+import 'goal_progress_service.dart';
 
 class GoalReminderAction {
   final String goalId;
@@ -30,10 +31,12 @@ class GoalReminderAction {
 }
 
 class GoalReminderNotificationService {
-  static const String channelId = 'goal_reminder_ongoing_v1';
-  static const String channelName = 'Goal reminders';
+  static const String channelId = 'goal_reminder_ongoing_v2';
+  static const String channelName = '專注目標提醒';
   static const int notificationId = 889;
   static const String _pendingActionsKey = 'goal_reminder_pending_actions';
+  static const String _openPanelPayload = 'open_quick_focus_panel';
+  static bool _shouldOpenPanelAfterLaunch = false;
 
   static final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
@@ -47,7 +50,7 @@ class GoalReminderNotificationService {
     const channel = AndroidNotificationChannel(
       channelId,
       channelName,
-      description: 'Persistent reminder for unfinished goals in the current period.',
+      description: '顯示目前週期尚未完成的專注目標摘要。',
       importance: Importance.low,
       playSound: false,
       enableVibration: false,
@@ -59,59 +62,34 @@ class GoalReminderNotificationService {
         ?.createNotificationChannel(channel);
   }
 
-  static Future<void> showOngoing(List<GoalProgress> progresses) async {
+  static Future<void> showOngoing(
+    List<GoalProgress> progresses, {
+    required int totalCount,
+    required int completedCount,
+  }) async {
     if (!_isAndroid) return;
-    if (progresses.isEmpty) {
+    if (totalCount == 0 || progresses.isEmpty) {
       await cancel();
       return;
     }
 
-    final visible = progresses.take(4).toList();
-    final averageProgress = progresses.isEmpty
-        ? 1.0
-        : progresses.fold<double>(0, (sum, p) => sum + p.progress) / progresses.length;
-
-    final lines = visible.map((progress) {
-      return '${progress.goal.title}: ${progress.valueText}';
-    }).join('\n');
-
-    GoalProgress? firstActionGoal;
-    for (final progress in visible) {
-      if (progress.goal.type == GoalType.binary || progress.goal.type == GoalType.task) {
-        firstActionGoal = progress;
-        break;
-      }
-    }
-
-    final actions = <AndroidNotificationAction>[];
-    if (firstActionGoal != null) {
-      final goal = firstActionGoal.goal;
-      if (goal.type == GoalType.binary) {
-        actions.add(AndroidNotificationAction(
-          _actionId('complete', goal.id),
-          'Done',
-          showsUserInterface: false,
-        ));
-      } else if (goal.type == GoalType.task) {
-        actions.addAll([
-          AndroidNotificationAction(
-            _actionId('increment', goal.id),
-            '+1',
-            showsUserInterface: false,
-          ),
-          AndroidNotificationAction(
-            _actionId('decrement', goal.id),
-            '-1',
-            showsUserInterface: false,
-          ),
-        ]);
-      }
-    }
+    final remainingCount = progresses.length;
+    final summary = '剩餘 $remainingCount 項｜完成 $completedCount / $totalCount';
+    final previewLines = progresses.take(6).map((progress) {
+      return '${GoalProgressService.displayTitle(progress.goal)}\n${progress.valueText}';
+    }).join('\n\n');
+    final body = [
+      summary,
+      if (previewLines.isNotEmpty) '',
+      if (previewLines.isNotEmpty) previewLines,
+      '',
+      '點擊管理全部專注目標',
+    ].join('\n');
 
     final details = AndroidNotificationDetails(
       channelId,
       channelName,
-      channelDescription: 'Persistent reminder for unfinished goals in the current period.',
+      channelDescription: '顯示目前週期尚未完成的專注目標摘要。',
       importance: Importance.low,
       priority: Priority.low,
       ongoing: true,
@@ -120,18 +98,18 @@ class GoalReminderNotificationService {
       silent: true,
       showWhen: false,
       styleInformation: BigTextStyleInformation(
-        lines,
-        contentTitle: 'Goals left: ${progresses.length}',
-        summaryText: 'Total progress ${(averageProgress * 100).round()}%',
+        body,
+        contentTitle: '專注目標',
+        summaryText: summary,
       ),
-      actions: actions,
     );
 
     await _notifications.show(
       notificationId,
-      'Goals left: ${progresses.length}',
-      visible.first.valueText,
+      '專注目標',
+      summary,
       NotificationDetails(android: details),
+      payload: _openPanelPayload,
     );
   }
 
@@ -141,6 +119,11 @@ class GoalReminderNotificationService {
   }
 
   static Future<void> handleNotificationResponse(NotificationResponse response) async {
+    if (response.payload == _openPanelPayload && response.actionId == null) {
+      await openQuickFocusPanel();
+      return;
+    }
+
     final actionId = response.actionId;
     if (actionId == null || !actionId.startsWith('goal_')) return;
 
@@ -177,13 +160,23 @@ class GoalReminderNotificationService {
         .toList();
   }
 
-  static String _actionId(String action, String goalId) => 'goal_$action:$goalId';
-
   static GoalReminderAction? _parseActionId(String actionId) {
     final separator = actionId.indexOf(':');
     if (separator <= 5 || separator == actionId.length - 1) return null;
     final action = actionId.substring(5, separator);
     final goalId = actionId.substring(separator + 1);
     return GoalReminderAction(goalId: goalId, action: action);
+  }
+
+  static bool isOpenPanelPayload(String? payload) => payload == _openPanelPayload;
+
+  static void markOpenPanelAfterLaunch() {
+    _shouldOpenPanelAfterLaunch = true;
+  }
+
+  static Future<void> openPanelAfterLaunchIfNeeded() async {
+    if (!_shouldOpenPanelAfterLaunch) return;
+    _shouldOpenPanelAfterLaunch = false;
+    await openQuickFocusPanel();
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../services/update_service.dart';
 import '../providers/app_theme_provider.dart';
+import '../providers/main_tab_provider.dart';
 import 'home_page.dart';
 import 'statistics_page.dart';
 import 'history_page.dart';
@@ -17,7 +18,6 @@ class MainScreen extends ConsumerStatefulWidget {
 }
 
 class _MainScreenState extends ConsumerState<MainScreen> {
-  int _currentIndex = 0;
   final List<Widget> _pages = [
     const HomePage(),
     const StatisticsPage(),
@@ -50,11 +50,12 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   @override
   Widget build(BuildContext context) {
     final t = ref.watch(currentAppThemeProvider);
+    final currentIndex = ref.watch(mainTabIndexProvider);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
-        child: IndexedStack(index: _currentIndex, children: _pages),
+        child: IndexedStack(index: currentIndex, children: _pages),
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
@@ -74,8 +75,8 @@ class _MainScreenState extends ConsumerState<MainScreen> {
             }),
           ),
           child: NavigationBar(
-            selectedIndex: _currentIndex,
-            onDestinationSelected: (index) => setState(() => _currentIndex = index),
+            selectedIndex: currentIndex,
+            onDestinationSelected: (index) => ref.read(mainTabIndexProvider.notifier).setIndex(index),
             backgroundColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
             shadowColor: Colors.transparent,

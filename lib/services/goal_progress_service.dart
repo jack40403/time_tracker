@@ -73,10 +73,10 @@ class GoalProgressService {
       sessions: sessions,
       runningTimer: runningTimer,
     );
-    return value >= _targetValue(goal);
+    return value >= targetValue(goal);
   }
 
-  static List<GoalProgress> getVisibleReminderGoals({
+  static List<GoalProgress> getCurrentFocusGoals({
     required List<Goal> timeGoals,
     required List<Goal> taskGoals,
     required List<TimeSession> sessions,
@@ -84,8 +84,8 @@ class GoalProgressService {
     RunningTimerSnapshot? runningTimer,
   }) {
     final allGoals = <Goal>[
-      ...timeGoals.where((g) => g.isActive),
-      ...taskGoals.where((g) => g.isActive),
+      ...timeGoals.where((goal) => goal.isActive),
+      ...taskGoals.where((goal) => goal.isActive),
     ];
 
     final progresses = allGoals
@@ -95,6 +95,33 @@ class GoalProgressService {
               sessions: sessions,
               runningTimer: runningTimer,
             ))
+        .toList();
+
+    progresses.sort((a, b) {
+      if (a.isCompleted != b.isCompleted) {
+        return a.isCompleted ? 1 : -1;
+      }
+      final progressCompare = b.progress.compareTo(a.progress);
+      if (progressCompare != 0) return progressCompare;
+      return a.goal.createdAt.compareTo(b.goal.createdAt);
+    });
+    return progresses;
+  }
+
+  static List<GoalProgress> getVisibleReminderGoals({
+    required List<Goal> timeGoals,
+    required List<Goal> taskGoals,
+    required List<TimeSession> sessions,
+    required DateTime now,
+    RunningTimerSnapshot? runningTimer,
+  }) {
+    final progresses = getCurrentFocusGoals(
+      timeGoals: timeGoals,
+      taskGoals: taskGoals,
+      sessions: sessions,
+      now: now,
+      runningTimer: runningTimer,
+    )
         .where((progress) => !progress.isCompleted)
         .toList();
 
@@ -119,7 +146,7 @@ class GoalProgressService {
       sessions: sessions,
       runningTimer: runningTimer,
     );
-    final target = _targetValue(goal);
+    final target = targetValue(goal);
     final progress = target <= 0 ? 1.0 : (current / target).clamp(0.0, 1.0);
 
     return GoalProgress(
@@ -138,9 +165,41 @@ class GoalProgressService {
 
   static String dateKey(DateTime date) => _dateKey(date);
 
-  static int _targetValue(Goal goal) {
+  static int targetValue(Goal goal) {
     if (goal.type == GoalType.binary) return 1;
     return goal.targetSeconds <= 0 ? 1 : goal.targetSeconds;
+  }
+
+  static String displayTitle(Goal goal) {
+    final title = goal.title.trim().isEmpty ? goal.category : goal.title.trim();
+    final suffix = periodTitleSuffix(goal.period);
+    return suffix.isEmpty ? title : '$title$suffix';
+  }
+
+  static String periodTitleSuffix(GoalPeriod period) {
+    switch (period) {
+      case GoalPeriod.daily:
+        return '';
+      case GoalPeriod.weekly:
+        return '（每週）';
+      case GoalPeriod.monthly:
+        return '（每月）';
+      case GoalPeriod.yearly:
+        return '（每年）';
+    }
+  }
+
+  static String periodProgressLabel(GoalPeriod period) {
+    switch (period) {
+      case GoalPeriod.daily:
+        return '今日';
+      case GoalPeriod.weekly:
+        return '本週';
+      case GoalPeriod.monthly:
+        return '本月';
+      case GoalPeriod.yearly:
+        return '本年';
+    }
   }
 
   static int _runningTimerSeconds(
@@ -219,28 +278,30 @@ class GoalProgressService {
 
   static String _formatValue(Goal goal, int current, int target) {
     if (goal.type == GoalType.time) {
-      return '${_formatDuration(current)} / ${_formatDuration(target)}';
+      final label = periodProgressLabel(goal.period);
+      return '${_formatDuration(current)} / $label ${_formatDuration(target)}';
     }
     if (goal.type == GoalType.binary) {
-      return current > 0 ? 'Done' : 'Not done';
+      return current > 0 ? '已完成' : '尚未完成';
     }
-    return '$current / $target';
+    final label = periodProgressLabel(goal.period);
+    return '$current 次 / $label $target 次';
   }
 
   static String _formatRemaining(Goal goal, int remaining) {
-    if (remaining <= 0) return 'Complete';
-    if (goal.type == GoalType.time) return '${_formatDuration(remaining)} left';
-    if (goal.type == GoalType.binary) return 'Not done';
-    return '$remaining left';
+    if (remaining <= 0) return '已完成';
+    if (goal.type == GoalType.time) return '剩餘 ${_formatDuration(remaining)}';
+    if (goal.type == GoalType.binary) return '尚未完成';
+    return '剩餘 $remaining 次';
   }
 
   static String _formatDuration(int seconds) {
     final safeSeconds = seconds < 0 ? 0 : seconds;
     final hours = safeSeconds ~/ 3600;
     final minutes = (safeSeconds % 3600) ~/ 60;
-    if (hours > 0 && minutes > 0) return '${hours}h${minutes}m';
-    if (hours > 0) return '${hours}h';
-    return '${minutes}m';
+    if (hours > 0 && minutes > 0) return '$hours 小時 $minutes 分鐘';
+    if (hours > 0) return '$hours 小時';
+    return '$minutes 分鐘';
   }
 }
 

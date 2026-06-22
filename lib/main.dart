@@ -9,9 +9,11 @@ import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'services/update_service.dart';
 import 'services/background_timer_service.dart';
 import 'services/notification_service.dart';
+import 'services/goal_reminder_notification_service.dart';
 import 'providers/layout_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/goal_reminder_provider.dart';
+import 'navigation/app_navigator.dart';
 import 'firebase_options.dart';
 import 'widgets/splash_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -88,6 +90,9 @@ class TimeTrackerApp extends ConsumerWidget {
     ref.watch(themeModeProvider);
     final appTheme = ref.watch(currentAppThemeProvider);
     ref.listen(goalReminderProvider, (_, _) {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      GoalReminderNotificationService.openPanelAfterLaunchIfNeeded();
+    });
     // 每個 AppTheme 有固定設計亮度，強制 Material theme 跟著走，避免系統亮度不符造成文字撞背景
     const darkAppThemeIds = {'dark'};
     final effectiveThemeMode = darkAppThemeIds.contains(appTheme.id) ? ThemeMode.dark : ThemeMode.light;
@@ -114,6 +119,7 @@ class TimeTrackerApp extends ConsumerWidget {
     );
 
     return MaterialApp(
+      navigatorKey: appNavigatorKey,
       title: 'Me Time',
       debugShowCheckedModeBanner: false,
       themeMode: effectiveThemeMode,
