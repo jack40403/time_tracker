@@ -7,6 +7,8 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  ANDROID_COMPILE_SDK: "36"
+  ANDROID_BUILD_TOOLS: "36.0.0"
 
 jobs:
   build-and-deploy:
@@ -22,14 +24,36 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}"
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          flutter-version: '3.44.0'
           cache: true
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Validate signing secrets
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_PASSWORD" || { echo "::error::Missing secret ANDROID_KEYSTORE_PASSWORD"; exit 1; }
+          test -n "$ANDROID_KEY_PASSWORD" || { echo "::error::Missing secret ANDROID_KEY_PASSWORD"; exit 1; }
+          test -n "$ANDROID_KEY_ALIAS" || { echo "::error::Missing secret ANDROID_KEY_ALIAS"; exit 1; }
 
       - name: Create key.properties
         run: |

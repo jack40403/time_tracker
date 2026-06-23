@@ -64,7 +64,7 @@ android {
     }
     
     namespace = "com.example.time_tracker"
-    compileSdk = 37
+    compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
