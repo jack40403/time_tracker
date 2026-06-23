@@ -5,10 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/goal.dart';
+import '../services/goal_stats_service.dart';
 import '../services/notification_service.dart';
 import 'category_provider.dart';
 import 'firestore_provider.dart';
+import 'session_provider.dart';
 import 'storage_provider.dart';
+import 'timer_provider.dart';
 
 class TaskGoalNotifier extends Notifier<List<Goal>> {
   static const _storageKey = 'goals_task_v4';
@@ -335,32 +338,18 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
   }
 
   Map<String, String> getRecords(Goal goal) {
-    if (goal.completionHistory.isEmpty) {
-      return {
-        'historical': 'No records',
-        'monthly': 'No records',
-        'historical_date': '',
-        'monthly_date': '',
-      };
-    }
-
-    final sortedDates = goal.completionHistory.keys.toList()..sort();
-    var bestValue = 0;
-    var bestDate = '';
-    for (final key in sortedDates) {
-      final value = goal.completionHistory[key] ?? 0;
-      if (value > bestValue) {
-        bestValue = value;
-        bestDate = key;
-      }
-    }
-
-    return {
-      'historical': '$bestValue',
-      'historical_date': bestDate,
-      'monthly': '${_currentPeriodValue(goal, DateTime.now())}',
-      'monthly_date': _formatDate(DateTime.now()),
-    };
+    final timerState = ref.read(timerProvider);
+    final stats = GoalStatsService.buildStats(
+      goal,
+      now: DateTime.now(),
+      sessions: ref.read(sessionsProvider),
+      currentRunningSeconds: timerState.isRunning && timerState.category == goal.category
+          ? timerState.currentElapsed
+          : 0,
+      isTimerRunning: timerState.isRunning,
+      runningCategory: timerState.category,
+    );
+    return stats.toLegacyMap();
   }
 
   int _currentPeriodValue(Goal goal, DateTime now) {
