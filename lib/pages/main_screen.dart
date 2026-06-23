@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../services/update_service.dart';
 import '../providers/app_theme_provider.dart';
 import '../providers/main_tab_provider.dart';
@@ -37,13 +35,6 @@ class _MainScreenState extends ConsumerState<MainScreen> {
         UpdateService.showUpdateDialog(context, info);
       }
 
-      // 2. 請求 Android 13+ 通知權限 (必要用於持久化通知欄)
-      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-        final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-        await flutterLocalNotificationsPlugin
-            .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-            ?.requestNotificationsPermission();
-      }
     });
   }
 

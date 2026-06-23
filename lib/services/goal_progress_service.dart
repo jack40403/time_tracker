@@ -1,8 +1,22 @@
+import 'package:flutter/foundation.dart';
+
 import '../models/goal.dart';
 import '../models/goal_progress.dart';
 import '../models/time_session.dart';
 
 class GoalProgressService {
+  static List<Goal> uniqueGoalsById(Iterable<Goal> goals) {
+    final unique = <String, Goal>{};
+    for (final goal in goals) {
+      if (goal.id.isEmpty) continue;
+      final existing = unique[goal.id];
+      if (existing == null || goal.updatedAt.isAfter(existing.updatedAt)) {
+        unique[goal.id] = goal;
+      }
+    }
+    return unique.values.toList();
+  }
+
   static String getCurrentPeriodKey(Goal goal, DateTime now) {
     final range = _periodRange(goal.period, now);
     switch (goal.period) {
@@ -76,17 +90,14 @@ class GoalProgressService {
     return value >= targetValue(goal);
   }
 
-  static List<GoalProgress> getCurrentFocusGoals({
-    required List<Goal> timeGoals,
-    required List<Goal> taskGoals,
+  static List<GoalProgress> getGoalProgressForCurrentPeriod({
+    required List<Goal> goals,
     required List<TimeSession> sessions,
     required DateTime now,
     RunningTimerSnapshot? runningTimer,
+    String? debugLabel,
   }) {
-    final allGoals = <Goal>[
-      ...timeGoals.where((goal) => goal.isActive),
-      ...taskGoals.where((goal) => goal.isActive),
-    ];
+    final allGoals = uniqueGoalsById(goals.where((goal) => goal.isActive));
 
     final progresses = allGoals
         .map((goal) => buildProgress(
@@ -105,25 +116,80 @@ class GoalProgressService {
       if (progressCompare != 0) return progressCompare;
       return a.goal.createdAt.compareTo(b.goal.createdAt);
     });
+
+    if (debugLabel != null) {
+      debugPrint(
+        'GoalProgressService.$debugLabel: '
+        'input=${goals.length}, unique=${allGoals.length}, '
+        'progress=${progresses.length}, completed=${progresses.where((p) => p.isCompleted).length}',
+      );
+    }
     return progresses;
   }
 
-  static List<GoalProgress> getVisibleReminderGoals({
+  static List<Goal> getVisibleReminderGoals({
+    required List<Goal> goals,
+    required Set<String> hiddenCategories,
+    required Set<String> goalsHiddenCategories,
+    required DateTime now,
+  }) {
+    final rawGoals = goals.toList();
+    final uniqueGoals = uniqueGoalsById(rawGoals);
+    final activeGoals = uniqueGoals.where((goal) => goal.isActive).toList();
+    final visibleGoals = activeGoals.where((goal) {
+      if (hiddenCategories.contains(goal.category)) return false;
+      if (goalsHiddenCategories.contains(goal.category)) return false;
+      return !now.isBefore(_dayStart(goal.startDate));
+    }).toList();
+
+    debugPrint(
+      'GoalProgressService.getVisibleReminderGoals: '
+      'raw=${rawGoals.length}, unique=${uniqueGoals.length}, '
+      'active=${activeGoals.length}, visible=${visibleGoals.length}, '
+      'hiddenGlobal=${hiddenCategories.length}, hiddenGoals=${goalsHiddenCategories.length}',
+    );
+
+    return visibleGoals;
+  }
+
+  static List<GoalProgress> getCurrentFocusGoals({
     required List<Goal> timeGoals,
     required List<Goal> taskGoals,
     required List<TimeSession> sessions,
     required DateTime now,
     RunningTimerSnapshot? runningTimer,
   }) {
-    final progresses = getCurrentFocusGoals(
-      timeGoals: timeGoals,
-      taskGoals: taskGoals,
+    return getGoalProgressForCurrentPeriod(
+      goals: [
+        ...timeGoals,
+        ...taskGoals,
+      ],
       sessions: sessions,
       now: now,
       runningTimer: runningTimer,
-    )
-        .where((progress) => !progress.isCompleted)
-        .toList();
+    );
+  }
+
+  static List<GoalProgress> getVisibleReminderGoalsProgress({
+    required List<Goal> goals,
+    required Set<String> hiddenCategories,
+    required Set<String> goalsHiddenCategories,
+    required List<TimeSession> sessions,
+    required DateTime now,
+    RunningTimerSnapshot? runningTimer,
+  }) {
+    final visibleGoals = getVisibleReminderGoals(
+      goals: goals,
+      hiddenCategories: hiddenCategories,
+      goalsHiddenCategories: goalsHiddenCategories,
+      now: now,
+    );
+    final progresses = getGoalProgressForCurrentPeriod(
+      goals: visibleGoals,
+      sessions: sessions,
+      now: now,
+      runningTimer: runningTimer,
+    ).where((progress) => !progress.isCompleted).toList();
 
     progresses.sort((a, b) {
       final progressCompare = b.progress.compareTo(a.progress);

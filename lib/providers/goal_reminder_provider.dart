@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/goal.dart';
@@ -7,6 +8,8 @@ import '../models/goal_progress.dart';
 import 'focus_goal_provider.dart';
 import '../services/goal_progress_service.dart';
 import '../services/goal_reminder_notification_service.dart';
+import '../services/notification_service.dart';
+import 'goal_provider.dart';
 import 'task_goal_provider.dart';
 
 class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
@@ -17,10 +20,19 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
 
   @override
   List<GoalProgress> build() {
+    final allGoals = ref.watch(allFocusGoalsProvider);
+    final visibleGoals = ref.watch(visibleFocusGoalsProvider);
     final allProgresses = ref.watch(focusGoalProgressProvider);
     final progresses = allProgresses.where((progress) => !progress.isCompleted).toList();
     final completedCount = allProgresses.length - progresses.length;
 
+    debugPrint(
+      'GoalReminderNotifier.build: '
+      'allGoals=${allGoals.length}, visibleGoals=${visibleGoals.length}, '
+      'allProgresses=${allProgresses.length}, remaining=${progresses.length}, completed=$completedCount',
+    );
+
+    _cancelHiddenGoalReminders(allGoals, visibleGoals);
     _ensurePendingActionPoller();
     _schedulePendingActionProcessing();
     _scheduleNotificationRefresh(
@@ -32,8 +44,16 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
   }
 
   Future<void> refreshNow() async {
+    final allGoals = ref.read(allFocusGoalsProvider);
+    final visibleGoals = ref.read(visibleFocusGoalsProvider);
     final allProgresses = ref.read(focusGoalProgressProvider);
     final progresses = allProgresses.where((progress) => !progress.isCompleted).toList();
+    debugPrint(
+      'GoalReminderNotifier.refreshNow: '
+      'allGoals=${allGoals.length}, visibleGoals=${visibleGoals.length}, '
+      'allProgresses=${allProgresses.length}, remaining=${progresses.length}',
+    );
+    _cancelHiddenGoalReminders(allGoals, visibleGoals);
     await GoalReminderNotificationService.showOngoing(
       progresses,
       totalCount: allProgresses.length,
@@ -102,10 +122,23 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
     });
   }
 
+  void _cancelHiddenGoalReminders(List<Goal> allGoals, List<Goal> visibleGoals) {
+    final visibleIds = visibleGoals.map((goal) => goal.id).toSet();
+    for (final goal in allGoals) {
+      if (!goal.isReminderEnabled || goal.reminderTime == null) {
+        unawaited(NotificationService.cancelGoalReminder(goal.id));
+        continue;
+      }
+      if (!visibleIds.contains(goal.id)) {
+        unawaited(NotificationService.cancelGoalReminder(goal.id));
+      }
+    }
+  }
+
   void _applyAction(GoalReminderAction action) {
-    final taskGoals = ref.read(taskGoalProvider);
+    final allGoals = ref.read(allFocusGoalsProvider);
     Goal? goal;
-    for (final candidate in taskGoals) {
+    for (final candidate in allGoals) {
       if (candidate.id == action.goalId) {
         goal = candidate;
         break;
@@ -116,7 +149,7 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
     final now = DateTime.now();
     final todayKey = GoalProgressService.dateKey(now);
     final current = goal.completionHistory[todayKey] ?? 0;
-    final notifier = ref.read(taskGoalProvider.notifier);
+    final notifier = _goalNotifierFor(goal);
 
     if (action.action == 'complete' && goal.type == GoalType.binary) {
       notifier.setManualValue(goal.id, now, 1);
@@ -129,6 +162,15 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
     } else if (action.action == 'decrement') {
       notifier.setManualValue(goal.id, now, current > 0 ? current - 1 : 0);
     }
+  }
+
+  dynamic _goalNotifierFor(Goal goal) {
+    final taskGoals = ref.read(taskGoalProvider);
+    final taskGoal = taskGoals.any((candidate) => candidate.id == goal.id);
+    if (taskGoal) {
+      return ref.read(taskGoalProvider.notifier);
+    }
+    return ref.read(goalProvider.notifier);
   }
 }
 

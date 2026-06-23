@@ -4,7 +4,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import '../models/goal.dart';
 import 'goal_reminder_notification_service.dart';
 
@@ -47,11 +47,17 @@ class NotificationService {
       onDidReceiveNotificationResponse: onNotificationResponse,
       onDidReceiveBackgroundNotificationResponse: onNotificationResponse,
     );
+
+    final androidImplementation =
+        _notifications.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    final permissionGranted = await androidImplementation?.requestNotificationsPermission();
+    debugPrint('NotificationService.init: Android notifications permission = $permissionGranted');
+
     await GoalReminderNotificationService.initialize();
   }
 
   static Future<void> scheduleGoalReminder(Goal goal) async {
-    if (kIsWeb || !goal.isReminderEnabled || goal.reminderTime == null) {
+    if (kIsWeb || !goal.isActive || !goal.isReminderEnabled || goal.reminderTime == null) {
       await cancelGoalReminder(goal.id);
       return;
     }

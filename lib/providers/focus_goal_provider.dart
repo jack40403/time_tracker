@@ -1,23 +1,49 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/goal.dart';
 import '../models/goal_progress.dart';
 import '../services/goal_progress_service.dart';
+import 'category_provider.dart';
 import 'goal_provider.dart';
 import 'session_provider.dart';
 import 'task_goal_provider.dart';
 import 'timer_provider.dart';
 
-final focusGoalProgressProvider = Provider<List<GoalProgress>>((ref) {
+final allFocusGoalsProvider = Provider<List<Goal>>((ref) {
   final timeGoals = ref.watch(goalProvider);
   final taskGoals = ref.watch(taskGoalProvider);
+  return GoalProgressService.uniqueGoalsById([
+    ...timeGoals,
+    ...taskGoals,
+  ]);
+});
+
+final visibleFocusGoalsProvider = Provider<List<Goal>>((ref) {
+  final goals = ref.watch(allFocusGoalsProvider);
+  final hiddenCategories = ref.watch(hiddenCategoriesProvider);
+  final goalsHiddenCategories = ref.watch(goalsHiddenCategoriesProvider);
+  final visible = GoalProgressService.getVisibleReminderGoals(
+    goals: goals,
+    hiddenCategories: hiddenCategories,
+    goalsHiddenCategories: goalsHiddenCategories,
+    now: DateTime.now(),
+  );
+  debugPrint(
+    'FocusGoalProvider.visibleFocusGoals: raw=${goals.length}, visible=${visible.length}, '
+    'hiddenGlobal=${hiddenCategories.length}, hiddenGoals=${goalsHiddenCategories.length}',
+  );
+  return visible;
+});
+
+final focusGoalProgressProvider = Provider<List<GoalProgress>>((ref) {
+  final goals = ref.watch(visibleFocusGoalsProvider);
   final sessions = ref.watch(sessionsProvider);
   final timerState = ref.watch(timerProvider);
   final now = DateTime.now();
 
-  return GoalProgressService.getCurrentFocusGoals(
-    timeGoals: timeGoals,
-    taskGoals: taskGoals,
+  final progresses = GoalProgressService.getGoalProgressForCurrentPeriod(
+    goals: goals,
     sessions: sessions,
     now: now,
     runningTimer: RunningTimerSnapshot(
@@ -27,7 +53,18 @@ final focusGoalProgressProvider = Provider<List<GoalProgress>>((ref) {
       baseSeconds: timerState.baseSeconds,
       currentElapsed: timerState.currentElapsed,
     ),
+    debugLabel: 'focusGoalProgress',
   );
+
+  progresses.sort((a, b) {
+    if (a.isCompleted != b.isCompleted) {
+      return a.isCompleted ? 1 : -1;
+    }
+    final progressCompare = b.progress.compareTo(a.progress);
+    if (progressCompare != 0) return progressCompare;
+    return a.goal.createdAt.compareTo(b.goal.createdAt);
+  });
+  return progresses;
 });
 
 final visibleReminderGoalsProvider = Provider<List<GoalProgress>>((ref) {
@@ -61,13 +98,14 @@ class FocusGoalActions {
             now,
             GoalProgressService.targetValue(goal),
           );
-    } else {
-      _ref.read(goalProvider.notifier).setManualValue(
-            goal.id,
-            now,
-            GoalProgressService.targetValue(goal),
-          );
+      return;
     }
+
+    _ref.read(goalProvider.notifier).setManualValue(
+          goal.id,
+          now,
+          GoalProgressService.targetValue(goal),
+        );
   }
 
   void increment(Goal goal) {
@@ -88,9 +126,9 @@ class FocusGoalActions {
 
     if (_isTaskBackedGoal(goal)) {
       _ref.read(taskGoalProvider.notifier).setManualValue(goal.id, date, next);
-    } else {
-      _ref.read(goalProvider.notifier).setManualValue(goal.id, date, next);
+      return;
     }
+    _ref.read(goalProvider.notifier).setManualValue(goal.id, date, next);
   }
 
   DateTime _latestEditableDate(Goal goal, DateTime now) {

@@ -12,9 +12,9 @@ class QuickFocusPanelPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final allGoals = ref.watch(focusGoalProgressProvider);
-    final goals = allGoals.where((progress) => !progress.isCompleted).toList();
-    final completedCount = allGoals.length - goals.length;
+    final goals = ref.watch(visibleReminderGoalsProvider);
+    final completedCount = ref.watch(completedFocusGoalCountProvider);
+    final totalCount = goals.length + completedCount;
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -23,15 +23,15 @@ class QuickFocusPanelPage extends ConsumerWidget {
         centerTitle: false,
       ),
       body: SafeArea(
-        child: allGoals.isEmpty
+        child: (goals.isEmpty && completedCount == 0)
             ? const _EmptyState(
-                title: '尚未建立專注目標',
-                message: '到專注目標頁新增目標後，這裡會顯示目前週期的進度。',
+                title: '目前沒有可顯示的專注目標',
+                message: '已封存、已停用或尚未啟用提醒的目標不會出現在這裡。',
               )
             : goals.isEmpty
                 ? const _EmptyState(
-                    title: '本週期目標已完成',
-                    message: '所有專注目標都已完成，下一個週期會自動重新出現。',
+                    title: '太棒了，全部完成',
+                    message: '目前週期內的有效專注目標都已完成。',
                   )
                 : ListView(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -39,7 +39,7 @@ class QuickFocusPanelPage extends ConsumerWidget {
                       _SummaryCard(
                         remainingCount: goals.length,
                         completedCount: completedCount,
-                        totalCount: allGoals.length,
+                        totalCount: totalCount,
                       ),
                       const SizedBox(height: 12),
                       ...goals.map((progress) => Padding(

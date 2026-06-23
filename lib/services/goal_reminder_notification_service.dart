@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb, debugPrint;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -31,7 +31,7 @@ class GoalReminderAction {
 }
 
 class GoalReminderNotificationService {
-  static const String channelId = 'goal_reminder_ongoing_v2';
+  static const String channelId = 'goal_reminder_ongoing_v3';
   static const String channelName = '專注目標提醒';
   static const int notificationId = 889;
   static const String _pendingActionsKey = 'goal_reminder_pending_actions';
@@ -51,7 +51,7 @@ class GoalReminderNotificationService {
       channelId,
       channelName,
       description: '顯示目前週期尚未完成的專注目標摘要。',
-      importance: Importance.low,
+      importance: Importance.defaultImportance,
       playSound: false,
       enableVibration: false,
       showBadge: false,
@@ -69,6 +69,10 @@ class GoalReminderNotificationService {
   }) async {
     if (!_isAndroid) return;
     if (totalCount == 0 || progresses.isEmpty) {
+      debugPrint(
+        'GoalReminderNotificationService.showOngoing: canceled because the reminder list is empty '
+        '(totalCount=$totalCount, progresses=${progresses.length})',
+      );
       await cancel();
       return;
     }
@@ -90,7 +94,7 @@ class GoalReminderNotificationService {
       channelId,
       channelName,
       channelDescription: '顯示目前週期尚未完成的專注目標摘要。',
-      importance: Importance.low,
+      importance: Importance.defaultImportance,
       priority: Priority.low,
       ongoing: true,
       autoCancel: false,
@@ -111,11 +115,17 @@ class GoalReminderNotificationService {
       NotificationDetails(android: details),
       payload: _openPanelPayload,
     );
+
+    debugPrint(
+      'GoalReminderNotificationService.showOngoing: shown '
+      '(totalCount=$totalCount, remaining=$remainingCount, completed=$completedCount)',
+    );
   }
 
   static Future<void> cancel() async {
     if (!_isAndroid) return;
     await _notifications.cancel(notificationId);
+    debugPrint('GoalReminderNotificationService.cancel: notification canceled');
   }
 
   static Future<void> handleNotificationResponse(NotificationResponse response) async {

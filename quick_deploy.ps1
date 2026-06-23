@@ -13,6 +13,18 @@ if (!(Test-Path $releaseKeystorePath)) {
     throw "Missing release keystore: $releaseKeystorePath"
 }
 
+$localPropertiesPath = "android/local.properties"
+if (Test-Path $localPropertiesPath) {
+    $localProperties = Get-Content $localPropertiesPath
+    $sdkDirLine = $localProperties | Where-Object { $_ -match '^sdk\.dir=' } | Select-Object -First 1
+    if ($sdkDirLine) {
+        $sdkDir = ($sdkDirLine -replace '^sdk\.dir=', '') -replace '\\\\', '\'
+        $env:ANDROID_HOME = $sdkDir
+        $env:ANDROID_SDK_ROOT = $sdkDir
+        Write-Host "Using Android SDK: $sdkDir" -ForegroundColor Green
+    }
+}
+
 $pubContent = Get-Content $pubspecPath -Raw
 
 if ($pubContent -notmatch "version: (\d+\.\d+\.\d+)\+(\d+)") {
@@ -20,28 +32,19 @@ if ($pubContent -notmatch "version: (\d+\.\d+\.\d+)\+(\d+)") {
 }
 
 $versionName = $Matches[1]
-$buildNumber = [int]$Matches[2]
+$buildNumber = [int64]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
 
-if ($buildNumber -lt 135) {
-    $buildNumber = 135
-} else {
-    $buildNumber += 1
-}
-
-$newVersion = "$versionName+$buildNumber"
-$pubContent = $pubContent -replace "version: \d+\.\d+\.\d+\+\d+", "version: $newVersion"
-$pubContent | Out-File $pubspecPath -Encoding UTF8
-Write-Host "Using release version: $newVersion" -ForegroundColor Yellow
+Write-Host "Using release version: $versionName+$buildNumber" -ForegroundColor Yellow
 
 Write-Host "--- [2/6] Building Android APK... ---" -ForegroundColor Cyan
-C:\flutter\bin\flutter.bat build apk --release --build-name=$versionName --build-number=$buildNumber
+flutter build apk --release --build-name=$versionName --build-number=$buildNumber
 if ($LASTEXITCODE -ne 0) { throw "APK build failed." }
 
 Write-Host "--- [3/6] Cleaning and preparing web folder... ---" -ForegroundColor Cyan
 if (Test-Path "build/web") { Remove-Item -Recurse -Force "build/web" }
 
 Write-Host "--- [4/6] Building Web... ---" -ForegroundColor Cyan
-C:\flutter\bin\flutter.bat build web --release --pwa-strategy=none
+flutter build web --release --pwa-strategy=none
 if ($LASTEXITCODE -ne 0) { throw "Web build failed." }
 
 Write-Host "--- [5/6] Syncing APK and metadata... ---" -ForegroundColor Cyan
@@ -83,7 +86,7 @@ $versionJson | Out-File "build/web/version.json" -Encoding UTF8
 Write-Host "version.json generated: v$versionName+$buildNumber" -ForegroundColor Green
 
 Write-Host "--- [6/6] Deploying to Firebase Hosting... ---" -ForegroundColor Cyan
-firebase.cmd deploy --only hosting
+cmd.exe /c "npx firebase-tools deploy --only hosting"
 if ($LASTEXITCODE -ne 0) { throw "Firebase deploy failed." }
 
 Write-Host "--- DONE. Refresh browser with Ctrl+F5. ---" -ForegroundColor Magenta

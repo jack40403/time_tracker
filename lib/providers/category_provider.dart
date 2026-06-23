@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'storage_provider.dart';
@@ -6,6 +8,7 @@ import 'firestore_provider.dart';
 import 'session_provider.dart';
 import 'goal_provider.dart';
 import 'task_goal_provider.dart';
+import '../services/notification_service.dart';
 import '../models/time_session.dart';
 import '../models/goal.dart';
 
@@ -158,7 +161,19 @@ class CategoryColorNotifier extends Notifier<Map<String, Color>> {
   void archiveCategory(String category) {
     if (state.length <= 1) return;
     ref.read(hiddenCategoriesProvider.notifier).hideCategory(category);
+    _cancelGoalRemindersForCategory(category);
     _save();
+  }
+
+  void _cancelGoalRemindersForCategory(String category) {
+    final goalIds = [
+      ...ref.read(goalProvider).where((goal) => goal.category == category).map((goal) => goal.id),
+      ...ref.read(taskGoalProvider).where((goal) => goal.category == category).map((goal) => goal.id),
+    ].toSet();
+
+    for (final goalId in goalIds) {
+      unawaited(NotificationService.cancelGoalReminder(goalId));
+    }
   }
   
   // REMOVES category from ACTIVE LIST but PROTECTS HISTORY
