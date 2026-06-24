@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/time_session.dart';
@@ -6,6 +7,7 @@ import '../providers/session_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/ui_providers.dart';
 import '../widgets/bar_chart_demo.dart';
+import '../widgets/delete_confirm_dialog.dart';
 import 'statistics_page.dart';
 import '../helpers/format_utils.dart';
 import '../helpers/filter_utils.dart';
@@ -153,44 +155,46 @@ class CategoryDetailPage extends ConsumerWidget {
                         ],
                       ),
                     ),
-                    ...dateSessions.map((TimeSession s) {
-                      return Dismissible(
-                        key: ValueKey('${s.category}_${s.date.millisecondsSinceEpoch}_${s.durationSeconds}'),
-                        direction: DismissDirection.endToStart,
-                        onDismissed: (_) {
-                          ref.read(sessionsProvider.notifier).deleteSession(s);
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                            content: Text('已刪除紀錄'),
-                            duration: Duration(milliseconds: 1000),
-                          ));
-                        },
-                        background: Container(
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.only(right: 20),
-                          margin: const EdgeInsets.only(bottom: 12),
-                          decoration: BoxDecoration(color: Colors.red.shade400, borderRadius: BorderRadius.circular(16)),
-                          child: const Icon(Icons.delete_outline, color: Colors.white),
-                        ),
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.surface,
+                    ...dateSessions.map((TimeSession s) {                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            key: ValueKey('${s.category}_${s.date.millisecondsSinceEpoch}_${s.durationSeconds}'),
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(width: 8, height: 8, decoration: BoxDecoration(color: catColor, shape: BoxShape.circle)),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Text(
-                                  '${s.date.hour.toString().padLeft(2, '0')}:${s.date.minute.toString().padLeft(2, '0')}',
-                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                                ),
+                            onLongPress: () async {
+                              HapticFeedback.mediumImpact();
+                              await confirmDeleteRecord(
+                                context: context,
+                                title: '確認刪除',
+                                message: '確定要刪除此計時紀錄嗎？此操作無法復原。',
+                                successMessage: '已刪除紀錄',
+                                onConfirm: () async {
+                                  await ref.read(sessionsProvider.notifier).deleteSession(s);
+                                },
+                              );
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.surface,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
                               ),
-                              Text(_formatTime(s.durationSeconds), style: GoogleFonts.shareTechMono(fontWeight: FontWeight.bold, fontSize: 18)),
-                            ],
+                              child: Row(
+                                children: [
+                                  Container(width: 8, height: 8, decoration: BoxDecoration(color: catColor, shape: BoxShape.circle)),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Text(
+                                      '${s.date.hour.toString().padLeft(2, '0')}:${s.date.minute.toString().padLeft(2, '0')}',
+                                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                                    ),
+                                  ),
+                                  Text(_formatTime(s.durationSeconds), style: GoogleFonts.shareTechMono(fontWeight: FontWeight.bold, fontSize: 18)),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                       );

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/goal.dart';
@@ -13,6 +14,7 @@ import '../helpers/goal_calendar_utils.dart';
 import '../providers/ui_providers.dart';
 import '../widgets/day_timeline_chart.dart';
 import '../widgets/elite_date_range_picker.dart';
+import '../widgets/delete_confirm_dialog.dart';
 import '../helpers/filter_utils.dart';
 import '../helpers/responsive_helper.dart';
 
@@ -465,73 +467,64 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                     ...dateSessions.asMap().entries.map((entry) {
                       final i = entry.key;
                       final s = entry.value;
-                      final color = catColors[s.category] ?? Colors.grey;
-                      return Dismissible(
-                        key: ValueKey('session_${s.category}_${s.date.millisecondsSinceEpoch}_${s.durationSeconds}_$i'),
-                        direction: DismissDirection.endToStart,
-                        onDismissed: (_) {
-                          final deletedSession = s;
-                          ref.read(sessionsProvider.notifier).deleteSession(s);
-                          ScaffoldMessenger.of(context).clearSnackBars();
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: const Text('已刪除紀錄'),
-                            duration: const Duration(seconds: 4),
-                            action: SnackBarAction(
-                              label: '復原',
-                              onPressed: () {
-                                ref.read(sessionsProvider.notifier).addSession(deletedSession);
-                              },
-                            ),
-                          ));
-                        },
-                        background: Container(
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.only(right: 20),
-                          margin: const EdgeInsets.only(bottom: 12),
-                          decoration: BoxDecoration(color: Colors.red.shade400, borderRadius: BorderRadius.circular(16)),
-                          child: const Icon(Icons.delete_outline, color: Colors.white),
-                        ),
-                        child: InkWell(
-                          onTap: () => _showEditSessionDialog(s),
-                          borderRadius: BorderRadius.circular(16),
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: Theme.of(context).colorScheme.outlineVariant)),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-                                    const SizedBox(width: 14),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(s.category, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18), overflow: TextOverflow.ellipsis),
-                                          Builder(builder: (context) {
-                                            final end = s.date.add(Duration(seconds: s.durationSeconds));
-                                            final start = '${s.date.hour.toString().padLeft(2, '0')}:${s.date.minute.toString().padLeft(2, '0')}';
-                                            final endStr = '${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}';
-                                            return Text('$start → $endStr', style: const TextStyle(fontSize: 15, color: Colors.grey));
-                                          }),
-                                        ],
+                      final color = catColors[s.category] ?? Colors.grey;                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            key: ValueKey('session_${s.category}_${s.date.millisecondsSinceEpoch}_${s.durationSeconds}_${i}'),
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () => _showEditSessionDialog(s),
+                            onLongPress: () async {
+                              HapticFeedback.mediumImpact();
+                              await confirmDeleteRecord(
+                                context: context,
+                                title: '確認刪除',
+                                message: '確定要刪除此計時紀錄嗎？此操作無法復原。',
+                                successMessage: '已刪除紀錄',
+                                onConfirm: () async {
+                                  await ref.read(sessionsProvider.notifier).deleteSession(s);
+                                },
+                              );
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: Theme.of(context).colorScheme.outlineVariant)),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(s.category, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18), overflow: TextOverflow.ellipsis),
+                                            Builder(builder: (context) {
+                                              final end = s.date.add(Duration(seconds: s.durationSeconds));
+                                              final start = '${s.date.hour.toString().padLeft(2, '0')}:${s.date.minute.toString().padLeft(2, '0')}';
+                                              final endStr = '${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}';
+                                              return Text('$start 到 $endStr', style: const TextStyle(fontSize: 15, color: Colors.grey));
+                                            }),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                    Text(_formatTime(s.durationSeconds), style: GoogleFonts.shareTechMono(fontWeight: FontWeight.bold, fontSize: 18)),
-                                  ],
-                                ),
-                                if (s.note != null && s.note!.isNotEmpty) ...[
-                                  const SizedBox(height: 10),
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withOpacity(0.05), borderRadius: BorderRadius.circular(10)),
-                                    child: Text(s.note!, style: const TextStyle(fontSize: 13, height: 1.4, fontStyle: FontStyle.italic)),
+                                      Text(_formatTime(s.durationSeconds), style: GoogleFonts.shareTechMono(fontWeight: FontWeight.bold, fontSize: 18)),
+                                    ],
                                   ),
+                                  if (s.note != null && s.note!.isNotEmpty) ...[
+                                    const SizedBox(height: 10),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withOpacity(0.05), borderRadius: BorderRadius.circular(10)),
+                                      child: Text(s.note!, style: const TextStyle(fontSize: 13, height: 1.4, fontStyle: FontStyle.italic)),
+                                    ),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
                           ),
                         ),
