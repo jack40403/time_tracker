@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/update_service.dart';
+import '../services/notification_service.dart';
+import '../services/goal_reminder_notification_service.dart';
 import '../providers/app_theme_provider.dart';
 import '../providers/main_tab_provider.dart';
 import 'home_page.dart';
@@ -27,6 +29,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   @override
   void initState() {
     super.initState();
+    NotificationService.openFocusGoalsRequest.addListener(_openFocusGoals);
     // 啟動時檢查更新
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // 1. 檢查更新
@@ -36,6 +39,16 @@ class _MainScreenState extends ConsumerState<MainScreen> {
       }
 
     });
+  }
+
+  void _openFocusGoals() {
+    if (mounted) setState(() => _currentIndex = 2);
+  }
+
+  @override
+  void dispose() {
+    NotificationService.openFocusGoalsRequest.removeListener(_openFocusGoals);
+    super.dispose();
   }
 
   @override

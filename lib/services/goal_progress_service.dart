@@ -39,11 +39,13 @@ class GoalProgressService {
     required List<TimeSession> sessions,
     RunningTimerSnapshot? runningTimer,
   }) {
-    if (!goal.isActive || now.isBefore(_dayStart(goal.startDate))) return 0;
+    if (!goal.isActive || isBeforeGoalStart(goal, now)) return 0;
 
     final range = _periodRange(goal.period, now);
-    final effectiveStart = _maxDateTime(range.start, goal.startDate);
-    final effectiveEnd = _minDateTime(range.endExclusive, now);
+    final goalStart = _taipeiDay(goal.startDate);
+    final effectiveStart = _maxDateTime(range.start, goalStart);
+    final nowTaipei = _taipeiCivil(now);
+    final effectiveEnd = _minDateTime(range.endExclusive, nowTaipei);
     if (!effectiveStart.isBefore(effectiveEnd) && !_sameMoment(effectiveStart, effectiveEnd)) {
       return 0;
     }
@@ -51,7 +53,7 @@ class GoalProgressService {
     if (goal.type == GoalType.time) {
       var total = 0;
       for (final session in sessions) {
-        final sessionDate = session.date.toLocal();
+        final sessionDate = _taipeiCivil(session.date);
         if (session.category != goal.category) continue;
         if (sessionDate.isBefore(effectiveStart)) continue;
         if (!sessionDate.isBefore(effectiveEnd.add(const Duration(milliseconds: 1)))) continue;
@@ -278,7 +280,7 @@ class GoalProgressService {
     if (runningTimer.category != goal.category) return 0;
     if (runningTimer.startTime == null) return runningTimer.currentElapsed;
 
-    final started = runningTimer.startTime!.toLocal();
+    final started = _taipeiCivil(runningTimer.startTime!);
     if (!started.isBefore(effectiveEnd)) return 0;
 
     final liveStart = _maxDateTime(started, effectiveStart);
@@ -292,28 +294,25 @@ class GoalProgressService {
   }
 
   static _PeriodRange _periodRange(GoalPeriod period, DateTime date) {
-    final local = date.toLocal();
+    final local = _taipeiCivil(date);
     switch (period) {
       case GoalPeriod.daily:
-        final start = DateTime(local.year, local.month, local.day);
+        final start = DateTime.utc(local.year, local.month, local.day);
         return _PeriodRange(start, start.add(const Duration(days: 1)));
       case GoalPeriod.weekly:
-        final startOfDay = DateTime(local.year, local.month, local.day);
+        final startOfDay = DateTime.utc(local.year, local.month, local.day);
         final start = startOfDay.subtract(Duration(days: local.weekday - 1));
         return _PeriodRange(start, start.add(const Duration(days: 7)));
       case GoalPeriod.monthly:
-        final start = DateTime(local.year, local.month);
-        return _PeriodRange(start, DateTime(local.year, local.month + 1));
+        final start = DateTime.utc(local.year, local.month);
+        return _PeriodRange(start, DateTime.utc(local.year, local.month + 1));
       case GoalPeriod.yearly:
-        final start = DateTime(local.year);
-        return _PeriodRange(start, DateTime(local.year + 1));
+        final start = DateTime.utc(local.year);
+        return _PeriodRange(start, DateTime.utc(local.year + 1));
     }
   }
 
-  static DateTime _dayStart(DateTime date) {
-    final local = date.toLocal();
-    return DateTime(local.year, local.month, local.day);
-  }
+  static DateTime _dayStart(DateTime date) => _taipeiDay(date);
 
   static DateTime _maxDateTime(DateTime a, DateTime b) => a.isAfter(b) ? a : b;
 
@@ -322,12 +321,14 @@ class GoalProgressService {
   static bool _sameMoment(DateTime a, DateTime b) => a.isAtSameMomentAs(b);
 
   static String _dateKey(DateTime date) {
-    final local = date.toLocal();
+    final local = _taipeiCivil(date);
     return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
   }
 
   static DateTime? _parseHistoryDate(String key) {
-    return DateTime.tryParse(key.replaceAll('/', '-'));
+    final parsed = DateTime.tryParse(key.replaceAll('/', '-'));
+    if (parsed == null) return null;
+    return DateTime.utc(parsed.year, parsed.month, parsed.day);
   }
 
   static int _isoWeekNumber(DateTime date) {

@@ -5,6 +5,8 @@ import '../providers/session_provider.dart';
 import '../providers/goal_provider.dart';
 import '../providers/task_goal_provider.dart';
 import '../providers/timer_provider.dart';
+import '../providers/current_focus_goals_provider.dart';
+import '../providers/goal_reminder_provider.dart';
 
 class AppLifecycleManager extends ConsumerStatefulWidget {
   final Widget child;
@@ -36,12 +38,20 @@ class _AppLifecycleManagerState extends ConsumerState<AppLifecycleManager> with 
       unawaited(ref.read(taskGoalProvider.notifier).syncNow());
     } else if (state == AppLifecycleState.resumed) {
       debugPrint('AppLifecycleManager: App resumed, fetching absolute truth from cloud & background...');
-      unawaited(ref.read(timerProvider.notifier).syncTimerFromServer());
-      
-      unawaited(ref.read(sessionsProvider.notifier).forceSyncFromCloud());
-      unawaited(ref.read(goalProvider.notifier).forceSyncFromCloud());
-      unawaited(ref.read(taskGoalProvider.notifier).forceSyncFromCloud());
+      unawaited(_refreshFromServer());
     }
+  }
+
+  Future<void> _refreshFromServer() async {
+    await Future.wait([
+      ref.read(timerProvider.notifier).syncTimerFromServer(),
+      ref.read(sessionsProvider.notifier).forceSyncFromCloud(),
+      ref.read(goalProvider.notifier).forceSyncFromCloud(),
+      ref.read(taskGoalProvider.notifier).forceSyncFromCloud(),
+    ]);
+    ref.invalidate(currentFocusGoalProgressProvider);
+    ref.invalidate(incompleteFocusGoalProgressProvider);
+    await ref.read(goalReminderProvider.notifier).refreshNow();
   }
 
   @override

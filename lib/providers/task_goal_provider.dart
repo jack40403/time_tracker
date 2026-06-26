@@ -7,6 +7,8 @@ import 'package:uuid/uuid.dart';
 import '../models/goal.dart';
 import '../services/goal_stats_service.dart';
 import '../services/notification_service.dart';
+import '../services/goal_progress_service.dart';
+import 'session_provider.dart';
 import 'category_provider.dart';
 import 'firestore_provider.dart';
 import 'session_provider.dart';
@@ -127,15 +129,8 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
       }
 
       if (remote.updatedAt.isAfter(local.updatedAt)) {
-        final history = Map<String, int>.from(local.completionHistory);
-        for (final entry in remote.completionHistory.entries) {
-          final localValue = history[entry.key] ?? 0;
-          if (entry.value > localValue) history[entry.key] = entry.value;
-        }
-        mergedMap[remote.id] = remote.copyWith(
-          completionHistory: history,
-          updatedAt: remote.updatedAt,
-        );
+        // Firestore transactions are authoritative, including valid decrements.
+        mergedMap[remote.id] = remote;
         changed = true;
       }
     }
@@ -146,7 +141,7 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
     }
   }
 
-  void addGoal(
+  String addGoal(
     String category,
     int target,
     GoalPeriod period, {
@@ -175,6 +170,7 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
     state = [...state, newGoal];
     _saveSingleLocal(newGoal);
     NotificationService.scheduleGoalReminder(newGoal);
+    return newGoal.id;
   }
 
   void addRawGoal(Goal goal) {
@@ -206,6 +202,11 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
     } catch (err) {
       debugPrint('TaskGoalNotifier: Force sync failed: $err');
     }
+  }
+
+  Future<void> reloadFromStorage() async {
+    await ref.read(storageServiceProvider).prefs.reload();
+    state = _load();
   }
 
   void deleteGoal(String id) {
@@ -296,7 +297,7 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
     _saveLocal();
   }
 
-  void setManualValue(String id, DateTime date, int val) {
+  Future<void> setManualValue(String id, DateTime date, int val) async {
     final dateKey = _formatDate(date);
     Goal? updatedGoal;
     state = state.map((goal) {
@@ -306,7 +307,7 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
       updatedGoal = goal.copyWith(completionHistory: history, updatedAt: DateTime.now());
       return updatedGoal!;
     }).toList();
-    if (updatedGoal != null) _saveSingleLocal(updatedGoal!);
+    if (updatedGoal != null) await _saveSingleLocal(updatedGoal!);
   }
 
   void toggleManualCompletion(String id, DateTime date) {
@@ -323,18 +324,19 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
   }
 
   double getProgress(Goal goal) {
-    final current = _currentPeriodValue(goal, DateTime.now());
-    if (goal.type == GoalType.binary) return current > 0 ? 1.0 : 0.0;
-    if (goal.targetSeconds <= 0) return 1.0;
-    return (current / goal.targetSeconds).clamp(0.0, 1.0);
+    return GoalProgressService.buildProgress(
+      goal: goal,
+      now: DateTime.now(),
+      sessions: ref.read(sessionsProvider),
+    ).progress;
   }
 
   String getRemainingText(Goal goal) {
-    final progress = getProgress(goal);
-    if (progress >= 1.0) return 'Complete';
-    final current = _currentPeriodValue(goal, DateTime.now());
-    if (goal.type == GoalType.binary) return 'Not done';
-    return '${goal.targetSeconds - current} left';
+    return GoalProgressService.buildProgress(
+      goal: goal,
+      now: DateTime.now(),
+      sessions: ref.read(sessionsProvider),
+    ).remainingText;
   }
 
   Map<String, String> getRecords(Goal goal) {

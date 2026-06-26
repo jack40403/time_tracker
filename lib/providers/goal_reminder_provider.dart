@@ -17,6 +17,8 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
   bool _processingActions = false;
   bool _refreshQueued = false;
   DateTime? _lastNotificationRefresh;
+  int _totalGoals = 0;
+  String? _lastDateKey;
 
   @override
   List<GoalProgress> build() {
@@ -65,6 +67,12 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
   void _ensurePendingActionPoller() {
     if (_pendingActionPoller != null) return;
     _pendingActionPoller = Timer.periodic(const Duration(seconds: 1), (_) {
+      final dateKey = GoalProgressService.dateKey(DateTime.now());
+      if (dateKey != _lastDateKey) {
+        _lastDateKey = dateKey;
+        ref.invalidate(currentFocusGoalProgressProvider);
+        ref.invalidate(incompleteFocusGoalProgressProvider);
+      }
       _schedulePendingActionProcessing();
       final allProgresses = ref.read(focusGoalProgressProvider);
       _scheduleNotificationRefresh(
@@ -111,10 +119,13 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
     _processingActions = true;
     Future.microtask(() async {
       try {
+        if (await GoalActionService.takeRefreshRequest()) {
+          await ref.read(taskGoalProvider.notifier).reloadFromStorage();
+        }
         final actions = await GoalReminderNotificationService.takePendingActions();
         if (actions.isEmpty) return;
         for (final action in actions) {
-          _applyAction(action);
+          await _applyAction(action);
         }
       } finally {
         _processingActions = false;
@@ -152,15 +163,15 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
     final notifier = _goalNotifierFor(goal);
 
     if (action.action == 'complete' && goal.type == GoalType.binary) {
-      notifier.setManualValue(goal.id, now, 1);
+      await notifier.setManualValue(goal.id, now, 1);
       return;
     }
 
     if (goal.type != GoalType.task) return;
     if (action.action == 'increment') {
-      notifier.setManualValue(goal.id, now, current + 1);
+      await notifier.setManualValue(goal.id, now, current + 1);
     } else if (action.action == 'decrement') {
-      notifier.setManualValue(goal.id, now, current > 0 ? current - 1 : 0);
+      await notifier.setManualValue(goal.id, now, current > 0 ? current - 1 : 0);
     }
   }
 

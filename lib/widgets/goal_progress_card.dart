@@ -28,8 +28,8 @@ class _GoalProgressCardState extends ConsumerState<GoalProgressCard> {
   String _formatTime(int seconds) {
     final hrs = seconds ~/ 3600;
     final mins = (seconds % 3600) ~/ 60;
-    if (hrs > 0) return '${hrs}h ${mins}m';
-    return '${mins}m';
+    if (hrs > 0) return '$hrs 小時 $mins 分';
+    return '$mins 分';
   }
 
   String _formatTodayTime(int seconds) {
@@ -298,7 +298,7 @@ class _GoalProgressCardState extends ConsumerState<GoalProgressCard> {
             children: [
               Icon(Icons.emoji_events_rounded, size: 16, color: catColor),
               const SizedBox(width: 6),
-              Text('連續達成記錄', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: catColor)),
+              Text('連續達成紀錄', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: catColor)),
             ],
           ),
           const SizedBox(height: 12),

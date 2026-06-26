@@ -10,11 +10,12 @@ import 'goal_reminder_notification_service.dart';
 
 @pragma('vm:entry-point')
 void onNotificationResponse(NotificationResponse response) {
-  unawaited(GoalReminderNotificationService.handleNotificationResponse(response));
+  unawaited(NotificationService.handleNotificationResponse(response));
 }
 
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
+  static final ValueNotifier<int> openFocusGoalsRequest = ValueNotifier(0);
 
   static Future<void> init() async {
     if (kIsWeb) return;
@@ -54,6 +55,22 @@ class NotificationService {
     debugPrint('NotificationService.init: Android notifications permission = $permissionGranted');
 
     await GoalReminderNotificationService.initialize();
+
+    final launchDetails = await _notifications.getNotificationAppLaunchDetails();
+    final response = launchDetails?.notificationResponse;
+    if (launchDetails?.didNotificationLaunchApp == true &&
+        response?.payload == 'open_focus_goals') {
+      await GoalReminderNotificationService.requestOpenFocusGoals();
+    }
+  }
+
+  static Future<void> handleNotificationResponse(
+    NotificationResponse response,
+  ) async {
+    await GoalReminderNotificationService.handleNotificationResponse(response);
+    if (response.actionId == null && response.payload == 'open_focus_goals') {
+      openFocusGoalsRequest.value++;
+    }
   }
 
   static Future<void> scheduleGoalReminder(Goal goal) async {

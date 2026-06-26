@@ -85,7 +85,7 @@ class HomePage extends ConsumerWidget {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24.0),
                     child: Text(
-                      'SELECT CATEGORY',
+                      '選擇計時項目',
                       style: GoogleFonts.getFont(
                         t.fontBody,
                         fontSize: 16,
@@ -151,13 +151,13 @@ class HomePage extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _ThemedSectionLabel(
-            text: 'Category List (drag to reorder)',
+            text: '計時項目（拖曳可排序）',
             textColor: t.mute,
             trailing: Row(
               children: [
                 GestureDetector(
                   onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Long press a category to edit it.')),
+                    const SnackBar(content: Text('長按項目即可編輯。')),
                   ),
                   child: Container(
                     padding: const EdgeInsets.all(6),
@@ -216,7 +216,7 @@ class HomePage extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     child: Center(
                       child: Text(
-                        'No categories yet. Tap + to add one.',
+                        '尚無計時項目，點擊＋新增。',
                         style: TextStyle(color: t.mute, fontSize: 13),
                       ),
                     ),
@@ -294,7 +294,7 @@ class HomePage extends ConsumerWidget {
                           border: Border.all(color: t.surface.withOpacity(0.4), width: 1),
                         ),
                         child: Text(
-                          '${(elapsed / 60).floor()}m',
+                          '${(elapsed / 60).floor()} 分',
                           style: TextStyle(fontSize: 11, color: t.chipInkSel, fontWeight: FontWeight.bold),
                         ),
                       );

@@ -135,10 +135,24 @@ class GoalReminderNotificationService {
     }
 
     final actionId = response.actionId;
-    if (actionId == null || !actionId.startsWith('goal_')) return;
+    if (actionId == null || !actionId.startsWith('goal_')) {
+      if (response.payload == 'open_focus_goals') {
+        await requestOpenFocusGoals();
+      }
+      return;
+    }
 
     final parsed = _parseActionId(actionId);
     if (parsed == null) return;
+
+    final result = await GoalActionService.apply(
+      goalId: parsed.goalId,
+      action: parsed.action,
+    );
+    if (result != null) {
+      await _refreshCachedNotification(result);
+      return;
+    }
 
     final prefs = await SharedPreferences.getInstance();
     final existing = prefs.getStringList(_pendingActionsKey) ?? const <String>[];
