@@ -238,6 +238,10 @@ class GoalProgressService {
     return goal.targetSeconds <= 0 ? 1 : goal.targetSeconds;
   }
 
+  static bool isBeforeGoalStart(Goal goal, DateTime now) {
+    return _taipeiCivil(now).isBefore(_taipeiDay(goal.startDate));
+  }
+
   static String displayTitle(Goal goal) {
     final title = goal.title.trim().isEmpty ? goal.category : goal.title.trim();
     final suffix = periodTitleSuffix(goal.period);
@@ -297,22 +301,29 @@ class GoalProgressService {
     final local = _taipeiCivil(date);
     switch (period) {
       case GoalPeriod.daily:
-        final start = DateTime.utc(local.year, local.month, local.day);
+        final start = _taipeiDay(local);
         return _PeriodRange(start, start.add(const Duration(days: 1)));
       case GoalPeriod.weekly:
-        final startOfDay = DateTime.utc(local.year, local.month, local.day);
+        final startOfDay = _taipeiDay(local);
         final start = startOfDay.subtract(Duration(days: local.weekday - 1));
         return _PeriodRange(start, start.add(const Duration(days: 7)));
       case GoalPeriod.monthly:
-        final start = DateTime.utc(local.year, local.month);
-        return _PeriodRange(start, DateTime.utc(local.year, local.month + 1));
+        final start = DateTime(local.year, local.month);
+        return _PeriodRange(start, DateTime(local.year, local.month + 1));
       case GoalPeriod.yearly:
-        final start = DateTime.utc(local.year);
-        return _PeriodRange(start, DateTime.utc(local.year + 1));
+        final start = DateTime(local.year);
+        return _PeriodRange(start, DateTime(local.year + 1));
     }
   }
 
   static DateTime _dayStart(DateTime date) => _taipeiDay(date);
+
+  static DateTime _taipeiCivil(DateTime date) => date.toLocal();
+
+  static DateTime _taipeiDay(DateTime date) {
+    final local = _taipeiCivil(date);
+    return DateTime(local.year, local.month, local.day);
+  }
 
   static DateTime _maxDateTime(DateTime a, DateTime b) => a.isAfter(b) ? a : b;
 
@@ -328,7 +339,7 @@ class GoalProgressService {
   static DateTime? _parseHistoryDate(String key) {
     final parsed = DateTime.tryParse(key.replaceAll('/', '-'));
     if (parsed == null) return null;
-    return DateTime.utc(parsed.year, parsed.month, parsed.day);
+    return DateTime(parsed.year, parsed.month, parsed.day);
   }
 
   static int _isoWeekNumber(DateTime date) {

@@ -1,10 +1,10 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import '../models/goal.dart';
 import 'goal_reminder_notification_service.dart';
 
@@ -15,7 +15,6 @@ void onNotificationResponse(NotificationResponse response) {
 
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
-  static final ValueNotifier<int> openFocusGoalsRequest = ValueNotifier(0);
 
   static Future<void> init() async {
     if (kIsWeb) return;
@@ -55,22 +54,12 @@ class NotificationService {
     debugPrint('NotificationService.init: Android notifications permission = $permissionGranted');
 
     await GoalReminderNotificationService.initialize();
-
-    final launchDetails = await _notifications.getNotificationAppLaunchDetails();
-    final response = launchDetails?.notificationResponse;
-    if (launchDetails?.didNotificationLaunchApp == true &&
-        response?.payload == 'open_focus_goals') {
-      await GoalReminderNotificationService.requestOpenFocusGoals();
-    }
   }
 
   static Future<void> handleNotificationResponse(
     NotificationResponse response,
   ) async {
     await GoalReminderNotificationService.handleNotificationResponse(response);
-    if (response.actionId == null && response.payload == 'open_focus_goals') {
-      openFocusGoalsRequest.value++;
-    }
   }
 
   static Future<void> scheduleGoalReminder(Goal goal) async {

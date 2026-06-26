@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/goal.dart';
 import '../models/goal_progress.dart';
+import 'current_focus_goals_provider.dart';
 import 'focus_goal_provider.dart';
 import '../services/goal_progress_service.dart';
+import '../services/goal_action_service.dart';
 import '../services/goal_reminder_notification_service.dart';
 import '../services/notification_service.dart';
 import 'goal_provider.dart';
@@ -146,7 +148,7 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
     }
   }
 
-  void _applyAction(GoalReminderAction action) {
+  Future<void> _applyAction(GoalReminderAction action) async {
     final allGoals = ref.read(allFocusGoalsProvider);
     Goal? goal;
     for (final candidate in allGoals) {
@@ -156,22 +158,23 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
       }
     }
     if (goal == null) return;
+    final selectedGoal = goal;
 
     final now = DateTime.now();
     final todayKey = GoalProgressService.dateKey(now);
-    final current = goal.completionHistory[todayKey] ?? 0;
-    final notifier = _goalNotifierFor(goal);
+    final current = selectedGoal.completionHistory[todayKey] ?? 0;
+    final notifier = _goalNotifierFor(selectedGoal);
 
-    if (action.action == 'complete' && goal.type == GoalType.binary) {
-      await notifier.setManualValue(goal.id, now, 1);
+    if (action.action == 'complete' && selectedGoal.type == GoalType.binary) {
+      await Future.sync(() => notifier.setManualValue(selectedGoal.id, now, 1));
       return;
     }
 
-    if (goal.type != GoalType.task) return;
+    if (selectedGoal.type != GoalType.task) return;
     if (action.action == 'increment') {
-      await notifier.setManualValue(goal.id, now, current + 1);
+      await Future.sync(() => notifier.setManualValue(selectedGoal.id, now, current + 1));
     } else if (action.action == 'decrement') {
-      await notifier.setManualValue(goal.id, now, current > 0 ? current - 1 : 0);
+      await Future.sync(() => notifier.setManualValue(selectedGoal.id, now, current > 0 ? current - 1 : 0));
     }
   }
 
