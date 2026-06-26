@@ -68,11 +68,10 @@ Future<void> initializeService() async {
   if (_serviceConfigured) return;
 
   final service = FlutterBackgroundService();
-
   const channel = AndroidNotificationChannel(
     notificationChannelId,
-    'Time Tracker 前景通知',
-    description: '維持計時服務存活並顯示單一前景通知。',
+    'Me Time 專注通知',
+    description: '維持計時服務並顯示目前專注目標摘要。',
     importance: Importance.low,
     enableVibration: false,
     playSound: false,
@@ -102,8 +101,8 @@ Future<void> initializeService() async {
       autoStart: false,
       isForegroundMode: true,
       notificationChannelId: notificationChannelId,
-      initialNotificationTitle: 'Time Tracker',
-      initialNotificationContent: '正在準備計時通知',
+      initialNotificationTitle: 'Me Time',
+      initialNotificationContent: '準備啟動專注通知',
       foregroundServiceNotificationId: notificationId,
       foregroundServiceTypes: [AndroidForegroundType.specialUse],
     ),
@@ -139,13 +138,16 @@ Future<void> stopBackgroundTimerService() async {
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
   int currentSeconds = 0;
-  String category = 'Focus';
+  String category = '專注計時';
   bool isRunning = false;
   bool isTimerActive = false;
   String timerStateLabel = '計時準備中';
-  String focusSummary = '目前沒有專注目標';
-  String focusDetail = '點擊查看詳情';
+  String focusSummary = '沒有未完成的專注目標';
+  String focusDetail = '目前沒有需要顯示的專注目標';
   int? timerStartedAtEpochMs;
+  int pausedSeconds = 0;
+  const autoStopTimeout = 30 * 60;
+  String? lastNotificationSignature;
 
   final prefs = await SharedPreferences.getInstance();
   final handoffRaw = prefs.getString('bg_handoff_state');
@@ -153,7 +155,7 @@ void onStart(ServiceInstance service) async {
     try {
       final data = jsonDecode(handoffRaw) as Map<String, dynamic>;
       currentSeconds = data['seconds'] as int? ?? 0;
-      category = data['category'] as String? ?? 'Focus';
+      category = data['category'] as String? ?? category;
       isRunning = data['isRunning'] as bool? ?? false;
       isTimerActive = data['isTimerActive'] as bool? ?? (isRunning || currentSeconds > 0);
       timerStateLabel = data['timerStateLabel'] as String? ??
@@ -167,14 +169,11 @@ void onStart(ServiceInstance service) async {
     timerStateLabel = isRunning ? '正在計時' : (currentSeconds > 0 ? '計時已暫停' : '計時準備中');
   }
 
-  int pausedSeconds = 0;
-  const autoStopTimeout = 30 * 60;
-  String? lastNotificationSignature;
-
   String formatClock(int seconds) {
-    final hours = seconds ~/ 3600;
-    final minutes = (seconds % 3600) ~/ 60;
-    final secs = seconds % 60;
+    final safeSeconds = seconds < 0 ? 0 : seconds;
+    final hours = safeSeconds ~/ 3600;
+    final minutes = (safeSeconds % 3600) ~/ 60;
+    final secs = safeSeconds % 60;
     if (hours > 0) {
       return '$hours:${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
     }
@@ -182,12 +181,11 @@ void onStart(ServiceInstance service) async {
   }
 
   _NotificationSnapshot buildNotificationSnapshot() {
-    final serviceContent = isRunning
-        ? '$category｜$focusSummary'
-        : '$timerStateLabel｜$focusSummary';
-
+    final serviceContent = isTimerActive
+        ? '$timerStateLabel｜$focusSummary'
+        : focusSummary;
     return _NotificationSnapshot(
-      serviceTitle: 'Time Tracker',
+      serviceTitle: 'Me Time',
       serviceContent: serviceContent,
       timerCategory: category,
       timerStateLabel: timerStateLabel,
@@ -259,7 +257,7 @@ void onStart(ServiceInstance service) async {
     });
   }
 
-  Timer.periodic(const Duration(seconds: 1), (t) async {
+  Timer.periodic(const Duration(seconds: 1), (timer) async {
     final currentPrefs = await SharedPreferences.getInstance();
     await currentPrefs.reload();
     final pendingAction = currentPrefs.getString('pending_timer_action');
@@ -273,6 +271,7 @@ void onStart(ServiceInstance service) async {
       } else if (pendingAction == 'stop') {
         service.invoke('stopFromNotification');
         service.stopSelf();
+        timer.cancel();
         return;
       }
     }
@@ -285,6 +284,7 @@ void onStart(ServiceInstance service) async {
       pausedSeconds++;
       if (pausedSeconds >= autoStopTimeout) {
         service.stopSelf();
+        timer.cancel();
         return;
       }
       updateWidget(currentSeconds, category);
@@ -299,8 +299,12 @@ void onStart(ServiceInstance service) async {
 
     if (event['seconds'] != null) currentSeconds = event['seconds'] as int;
     if (event['category'] != null) category = event['category'] as String;
-    if (event['isTimerActive'] != null) isTimerActive = event['isTimerActive'] as bool;
-    if (event['timerStateLabel'] != null) timerStateLabel = event['timerStateLabel'] as String;
+    if (event['isTimerActive'] != null) {
+      isTimerActive = event['isTimerActive'] as bool;
+    }
+    if (event['timerStateLabel'] != null) {
+      timerStateLabel = event['timerStateLabel'] as String;
+    }
     if (event['timerStartedAtEpochMs'] != null) {
       timerStartedAtEpochMs = event['timerStartedAtEpochMs'] as int?;
     }
@@ -320,8 +324,12 @@ void onStart(ServiceInstance service) async {
     focusSummary = event['focusSummary'] as String? ?? focusSummary;
     focusDetail = event['focusDetail'] as String? ?? focusDetail;
     if (event['timerCategory'] != null) category = event['timerCategory'] as String;
-    if (event['timerStateLabel'] != null) timerStateLabel = event['timerStateLabel'] as String;
-    if (event['isTimerActive'] != null) isTimerActive = event['isTimerActive'] as bool;
+    if (event['timerStateLabel'] != null) {
+      timerStateLabel = event['timerStateLabel'] as String;
+    }
+    if (event['isTimerActive'] != null) {
+      isTimerActive = event['isTimerActive'] as bool;
+    }
     if (event['timerStartedAtEpochMs'] != null) {
       timerStartedAtEpochMs = event['timerStartedAtEpochMs'] as int?;
     }
@@ -330,8 +338,8 @@ void onStart(ServiceInstance service) async {
   });
 
   service.on('clearNotificationSnapshot').listen((event) {
-    focusSummary = '目前沒有專注目標';
-    focusDetail = '點擊查看詳情';
+    focusSummary = '沒有未完成的專注目標';
+    focusDetail = '目前沒有需要顯示的專注目標';
     isTimerActive = isRunning || currentSeconds > 0;
     timerStateLabel = isRunning ? '正在計時' : (currentSeconds > 0 ? '計時已暫停' : '計時準備中');
     timerStartedAtEpochMs = isRunning

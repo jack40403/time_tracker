@@ -10,6 +10,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'services/update_service.dart';
 import 'services/background_timer_service.dart';
+import 'services/notification_launch_service.dart';
 import 'services/notification_service.dart';
 import 'services/goal_reminder_notification_service.dart';
 import 'services/notification_coordinator.dart';
@@ -92,11 +93,32 @@ void main() async {
   });
 }
 
-class TimeTrackerApp extends ConsumerWidget {
+class TimeTrackerApp extends ConsumerStatefulWidget {
   const TimeTrackerApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TimeTrackerApp> createState() => _TimeTrackerAppState();
+}
+
+class _TimeTrackerAppState extends ConsumerState<TimeTrackerApp> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(
+        NotificationCoordinator.instance.requestForegroundRefresh(
+          ref,
+          reason: 'app-start',
+          force: true,
+        ),
+      );
+      unawaited(NotificationLaunchService.consumePendingTarget());
+      GoalReminderNotificationService.openPanelAfterLaunchIfNeeded();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     ref.watch(themeModeProvider);
     final appTheme = ref.watch(currentAppThemeProvider);
     ref.listen(timerProvider, (previous, next) {
@@ -119,16 +141,6 @@ class TimeTrackerApp extends ConsumerWidget {
           reason: 'focus-progress',
         ),
       );
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(
-        NotificationCoordinator.instance.requestForegroundRefresh(
-          ref,
-          reason: 'app-build',
-          force: true,
-        ),
-      );
-      GoalReminderNotificationService.openPanelAfterLaunchIfNeeded();
     });
     // 每個 AppTheme 有固定設計亮度，強制 Material theme 跟著走，避免系統亮度不符造成文字撞背景
     const darkAppThemeIds = {'dark'};

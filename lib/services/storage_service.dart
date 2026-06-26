@@ -168,6 +168,10 @@ class StorageService {
     await _prefs.setString(_pk(_timerStateKey), jsonEncode(state));
   }
 
+  Future<void> clearTimerState() async {
+    await _prefs.remove(_pk(_timerStateKey));
+  }
+
   String loadOrCreateDeviceId() {
     final key = _pk(_deviceIdKey);
     final existing = _prefs.getString(key);

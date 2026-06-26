@@ -7,6 +7,7 @@ import '../providers/task_goal_provider.dart';
 import '../providers/timer_provider.dart';
 import '../providers/current_focus_goals_provider.dart';
 import '../services/notification_coordinator.dart';
+import '../services/notification_launch_service.dart';
 
 class AppLifecycleManager extends ConsumerStatefulWidget {
   final Widget child;
@@ -56,6 +57,7 @@ class _AppLifecycleManagerState extends ConsumerState<AppLifecycleManager> with 
       reason: 'app-resume',
       force: true,
     );
+    await NotificationLaunchService.consumePendingTarget();
   }
 
   @override

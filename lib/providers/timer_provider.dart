@@ -17,6 +17,7 @@ import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:flutter_background_service/flutter_background_service.dart';
 import '../services/background_timer_service.dart';
 import '../services/media_session_service.dart';
+import '../services/notification_coordinator.dart';
 
 class TimerColorNotifier extends Notifier<Color> {
   @override
@@ -190,6 +191,9 @@ class TimerState {
 
 class TimerNotifier extends Notifier<TimerState> {
   Timer? _timer;
+  StreamSubscription<dynamic>? _statusChangeSubscription;
+  StreamSubscription<dynamic>? _stopFromNotificationSubscription;
+  bool _backgroundListenersBound = false;
   bool _isSyncingFromCloud = false;
   bool _isFinalizingStop = false;
   DateTime? _lastManualActionTime;
@@ -268,6 +272,12 @@ class TimerNotifier extends Notifier<TimerState> {
     final localJson = storage.loadTimerState();
     final firestore = ref.watch(firestoreServiceProvider);
 
+    ref.onDispose(() {
+      _timer?.cancel();
+      _statusChangeSubscription?.cancel();
+      _stopFromNotificationSubscription?.cancel();
+    });
+
     if (kIsWeb) {
       MediaSessionService.initHandlers(toggleTimer);
     }
@@ -334,46 +344,7 @@ class TimerNotifier extends Notifier<TimerState> {
       Future.microtask(() => _syncToWidget());
     }
 
-    // Listen for background service events (Android Notification Actions) ALWAYS
-    if (!kIsWeb) {
-      FlutterBackgroundService().on('statusChange').listen((event) {
-        if (event != null && !kIsWeb) {
-          if (_isFinalizingStop) return;
-          final bool remoteRunning = event['isRunning'];
-          final int remoteSeconds = event['currentElapsed'];
-          
-          if (remoteRunning != state.isRunning) {
-            if (remoteRunning) {
-              state = state.copyWith(
-                isRunning: true, 
-                startTime: DateTime.now().toUtc().subtract(Duration(seconds: remoteSeconds)),
-                baseSeconds: 0,
-                sessionStartTime: state.sessionStartTime ?? DateTime.now().toUtc().subtract(Duration(seconds: remoteSeconds)),
-                status: 'running',
-                durationSeconds: remoteSeconds,
-              );
-              _startTicker();
-            } else {
-              if (_isFinalizingStop) return;
-              _timer?.cancel();
-
-              state = state.copyWith(
-                isRunning: false,
-                baseSeconds: remoteSeconds,
-                startTime: null,
-                status: remoteSeconds > 0 ? 'paused' : 'idle',
-                durationSeconds: remoteSeconds,
-              );
-            }
-            unawaited(_pushToCloud());
-          }
-        }
-      });
-
-      FlutterBackgroundService().on('stopFromNotification').listen((event) {
-        unawaited(stopAndSave());
-      });
-    }
+    _bindBackgroundServiceListeners();
 
     final currentCloud = ref.read(cloudTimerProvider);
     if (currentCloud.hasValue && currentCloud.value != null) {
@@ -667,6 +638,7 @@ class TimerNotifier extends Notifier<TimerState> {
       }
       _syncToLiveActivity();
       _syncToWidget();
+      unawaited(_clearPersistedTimerState());
       _saveLocally();
     } finally {
       _isFinalizingStop = false;
@@ -675,21 +647,88 @@ class TimerNotifier extends Notifier<TimerState> {
 
   void resetTimer() {
     _timer?.cancel();
+    final category = state.category;
     state = state.copyWith(
       isRunning: false,
       baseSeconds: 0,
       startTime: null,
       status: 'idle',
       durationSeconds: 0,
+      recordId: null,
+      deviceId: null,
+      startDeviceId: null,
+      workspaceId: null,
+      startedAt: null,
+      endedAt: null,
+      note: null,
+      updatedAt: DateTime.now().toUtc(),
     );
     if (kIsWeb) {
       MediaSessionService.setPlaybackState(false);
       MediaSessionService.updateMetadata(state.category, '00:00');
     }
-    _syncToBackground();
+    if (!kIsWeb) {
+      unawaited(stopBackgroundTimerService());
+    }
     _syncToLiveActivity();
     _syncToWidget();
-    unawaited(_pushToCloud());
+    unawaited(_clearPersistedTimerState());
+    _saveLocally();
+    unawaited(
+      NotificationCoordinator.instance.requestForegroundRefresh(
+        ref,
+        reason: 'timer-reset',
+        force: true,
+      ),
+    );
+    state = TimerState(category: category);
+  }
+
+  void _bindBackgroundServiceListeners() {
+    if (kIsWeb || _backgroundListenersBound) return;
+    _backgroundListenersBound = true;
+
+    _statusChangeSubscription =
+        FlutterBackgroundService().on('statusChange').listen((event) {
+      if (event == null || kIsWeb || _isFinalizingStop) return;
+
+      final remoteRunning = event['isRunning'] as bool? ?? false;
+      final remoteSeconds = event['currentElapsed'] as int? ?? 0;
+
+      if (remoteRunning == state.isRunning &&
+          remoteSeconds == state.currentElapsed) {
+        return;
+      }
+
+      if (remoteRunning) {
+        final remoteStart =
+            DateTime.now().toUtc().subtract(Duration(seconds: remoteSeconds));
+        state = state.copyWith(
+          isRunning: true,
+          startTime: remoteStart,
+          baseSeconds: 0,
+          sessionStartTime: state.sessionStartTime ?? remoteStart,
+          status: 'running',
+          durationSeconds: remoteSeconds,
+        );
+        _startTicker();
+      } else {
+        _timer?.cancel();
+        state = state.copyWith(
+          isRunning: false,
+          baseSeconds: remoteSeconds,
+          startTime: null,
+          status: remoteSeconds > 0 ? 'paused' : 'idle',
+          durationSeconds: remoteSeconds,
+        );
+      }
+      unawaited(_pushToCloud());
+    });
+
+    _stopFromNotificationSubscription =
+        FlutterBackgroundService().on('stopFromNotification').listen((event) {
+      unawaited(stopAndSave());
+    });
   }
 
   Future<void> _pushToCloud() async {
@@ -728,6 +767,7 @@ class TimerNotifier extends Notifier<TimerState> {
         debugPrint('TimerNotifier: Server reports no active timer. Resetting local state.');
         _timer?.cancel();
         state = TimerState(category: state.category);
+        await _clearPersistedTimerState();
         _saveLocally();
         _syncToBackground();
         _syncToWidget();
@@ -753,6 +793,17 @@ class TimerNotifier extends Notifier<TimerState> {
       }
     } catch (e) {
       debugPrint('TimerNotifier: syncTimerFromServer failed: $e');
+    }
+  }
+
+  Future<void> _clearPersistedTimerState() async {
+    try {
+      await ref.read(storageServiceProvider).clearTimerState();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('bg_handoff_state');
+      await prefs.remove('pending_timer_action');
+    } catch (e) {
+      debugPrint('TimerNotifier: clear persisted timer state failed: $e');
     }
   }
 

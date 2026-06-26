@@ -30,7 +30,7 @@ object TimerNotificationManager {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Time Tracker 前景通知",
+                "Me Time 專注通知",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 enableVibration(false)
@@ -64,7 +64,8 @@ object TimerNotificationManager {
         )
 
         val openIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("notification_target", "quick_focus_panel")
         }
         val openPendingIntent = PendingIntent.getActivity(
             context,
@@ -73,38 +74,36 @@ object TimerNotificationManager {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val timerBlock = if (isTimerActive) {
+        val detailLines = focusDetail
+            .split("\n")
+            .map { it.trimEnd() }
+            .filter { it.isNotBlank() }
+
+        val inboxStyle = NotificationCompat.InboxStyle()
+            .setBigContentTitle("專注目標")
+            .setSummaryText(focusSummary)
+
+        val timerHeadline = if (isTimerActive) {
             buildString {
                 append(timerStateLabel)
                 if (timerCategory.isNotBlank()) {
-                    append('\n')
+                    append("｜")
                     append(timerCategory)
                 }
             }
         } else {
             "目前沒有進行中的計時"
         }
-
-        val bigText = buildString {
-            append(timerBlock)
-            append("\n\n")
-            append("專注目標\n")
-            append(focusSummary)
-            if (focusDetail.isNotBlank()) {
-                append('\n')
-                append(focusDetail)
-            }
-        }
+        inboxStyle.addLine(timerHeadline)
+        inboxStyle.addLine("────────────")
+        inboxStyle.addLine(focusSummary)
+        detailLines.forEach { inboxStyle.addLine(it) }
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(content)
-            .setStyle(
-                NotificationCompat.BigTextStyle()
-                    .bigText(bigText)
-                    .setBigContentTitle("Time Tracker")
-                    .setSummaryText(focusSummary)
-            )
+            .setSubText("專注目標")
+            .setStyle(inboxStyle)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
             .setAutoCancel(false)
