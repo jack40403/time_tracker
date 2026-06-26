@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -10,7 +11,7 @@ import 'firestore_provider.dart';
 import 'session_provider.dart';
 import 'category_provider.dart';
 import 'timer_provider.dart';
-import '../services/notification_service.dart';
+import '../services/notification_coordinator.dart';
 import '../services/goal_progress_service.dart';
 import '../models/goal_progress.dart';
 
@@ -205,7 +206,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
     _checkMilestones();
     
     // 安排鬧鐘提醒
-    NotificationService.scheduleGoalReminder(newGoal);
+    unawaited(NotificationCoordinator.instance.requestReminderSchedule(newGoal));
     
     return newGoal.id;
   }
@@ -236,7 +237,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
     _saveSingleLocal(goal, isDelete: true);
     
     // 取消鬧鐘提醒
-    NotificationService.cancelGoalReminder(id);
+    unawaited(NotificationCoordinator.instance.requestReminderCancel(id));
   }
 
   Future<void> deleteGoalsByCategory(String category) async {
@@ -314,7 +315,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
     _checkMilestones();
 
     // 更新鬧鐘提醒
-    NotificationService.scheduleGoalReminder(withTimestamp);
+    unawaited(NotificationCoordinator.instance.requestReminderSchedule(withTimestamp));
   }
 
   void setManualValue(String id, DateTime date, int val) {

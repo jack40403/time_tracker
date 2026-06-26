@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -6,7 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/goal.dart';
 import '../services/goal_stats_service.dart';
-import '../services/notification_service.dart';
+import '../services/notification_coordinator.dart';
 import '../services/goal_progress_service.dart';
 import 'session_provider.dart';
 import 'category_provider.dart';
@@ -169,7 +170,7 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
     );
     state = [...state, newGoal];
     _saveSingleLocal(newGoal);
-    NotificationService.scheduleGoalReminder(newGoal);
+    unawaited(NotificationCoordinator.instance.requestReminderSchedule(newGoal));
     return newGoal.id;
   }
 
@@ -183,7 +184,7 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
     final withTimestamp = updated.copyWith(updatedAt: DateTime.now());
     state = state.map((goal) => goal.id == withTimestamp.id ? withTimestamp : goal).toList();
     _saveSingleLocal(withTimestamp);
-    NotificationService.scheduleGoalReminder(withTimestamp);
+    unawaited(NotificationCoordinator.instance.requestReminderSchedule(withTimestamp));
   }
 
   void forceMergeFromCloud(List<Goal> remoteGoals) {
@@ -225,7 +226,7 @@ class TaskGoalNotifier extends Notifier<List<Goal>> {
     _addTombstones([id]);
     state = state.where((goal) => goal.id != id).toList();
     _saveSingleLocal(goal, isDelete: true);
-    NotificationService.cancelGoalReminder(id);
+    unawaited(NotificationCoordinator.instance.requestReminderCancel(id));
   }
 
   Future<void> deleteGoalsByCategory(String category) async {

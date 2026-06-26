@@ -16,22 +16,28 @@ object TimerNotificationManager {
         context: Context,
         title: String,
         content: String,
+        timerCategory: String,
+        timerStateLabel: String,
+        focusSummary: String,
+        focusDetail: String,
         isRunning: Boolean,
-        elapsedSeconds: Int
+        isTimerActive: Boolean,
+        timerStartedAtEpochMs: Long?
     ) {
-        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationManager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "計時常駐通知",
+                "Time Tracker 前景通知",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 enableVibration(false)
                 setSound(null, null)
                 setShowBadge(false)
             }
-            nm.createNotificationChannel(channel)
+            notificationManager.createNotificationChannel(channel)
         }
 
         val toggleAction = if (isRunning) "pause" else "resume"
@@ -40,7 +46,7 @@ object TimerNotificationManager {
         val toggleIntent = Intent(context, TimerActionReceiver::class.java).apply {
             putExtra("timer_action", toggleAction)
         }
-        val togglePending = PendingIntent.getBroadcast(
+        val togglePendingIntent = PendingIntent.getBroadcast(
             context,
             1,
             toggleIntent,
@@ -50,7 +56,7 @@ object TimerNotificationManager {
         val stopIntent = Intent(context, TimerActionReceiver::class.java).apply {
             putExtra("timer_action", "stop")
         }
-        val stopPending = PendingIntent.getBroadcast(
+        val stopPendingIntent = PendingIntent.getBroadcast(
             context,
             2,
             stopIntent,
@@ -60,20 +66,48 @@ object TimerNotificationManager {
         val openIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
-        val openPending = PendingIntent.getActivity(
+        val openPendingIntent = PendingIntent.getActivity(
             context,
             0,
             openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val timerBlock = if (isTimerActive) {
+            buildString {
+                append(timerStateLabel)
+                if (timerCategory.isNotBlank()) {
+                    append('\n')
+                    append(timerCategory)
+                }
+            }
+        } else {
+            "目前沒有進行中的計時"
+        }
+
+        val bigText = buildString {
+            append(timerBlock)
+            append("\n\n")
+            append("專注目標\n")
+            append(focusSummary)
+            if (focusDetail.isNotBlank()) {
+                append('\n')
+                append(focusDetail)
+            }
+        }
+
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(content)
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText(bigText)
+                    .setBigContentTitle("Time Tracker")
+                    .setSummaryText(focusSummary)
+            )
             .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
             .setAutoCancel(false)
-            .setShowWhen(!isRunning)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
@@ -82,18 +116,24 @@ object TimerNotificationManager {
             .setSound(null)
             .setVibrate(null)
             .setDefaults(0)
-            .setContentIntent(openPending)
-            .addAction(0, toggleLabel, togglePending)
-            .addAction(0, "停止", stopPending)
+            .setContentIntent(openPendingIntent)
 
-        if (isRunning) {
-            val whenMillis = System.currentTimeMillis() - (elapsedSeconds.coerceAtLeast(0) * 1000L)
+        if (isTimerActive) {
+            builder
+                .addAction(0, toggleLabel, togglePendingIntent)
+                .addAction(0, "停止", stopPendingIntent)
+        }
+
+        if (isRunning && timerStartedAtEpochMs != null) {
             builder
                 .setUsesChronometer(true)
                 .setChronometerCountDown(false)
-                .setWhen(whenMillis)
+                .setWhen(timerStartedAtEpochMs)
+                .setShowWhen(true)
+        } else {
+            builder.setShowWhen(false)
         }
 
-        nm.notify(NOTIFICATION_ID, builder.build())
+        notificationManager.notify(NOTIFICATION_ID, builder.build())
     }
 }

@@ -231,6 +231,36 @@ class GoalProgressService {
     );
   }
 
+  static Map<String, String> buildRecords({
+    required Goal goal,
+    required DateTime now,
+    required List<TimeSession> sessions,
+    RunningTimerSnapshot? runningTimer,
+  }) {
+    final completedPeriods = _completedPeriodKeys(
+      goal: goal,
+      now: now,
+      sessions: sessions,
+      runningTimer: runningTimer,
+    );
+    final historical = _longestCompletedStreak(
+      goal: goal,
+      now: now,
+      completedKeys: completedPeriods,
+    );
+    final monthly = _longestCompletedStreak(
+      goal: goal,
+      now: now,
+      completedKeys: completedPeriods,
+      restrictToCurrentMonth: true,
+    );
+
+    return {
+      'historical': '$historical',
+      'monthly': '$monthly',
+    };
+  }
+
   static String dateKey(DateTime date) => _dateKey(date);
 
   static int targetValue(Goal goal) {
@@ -352,6 +382,87 @@ class GoalProgressService {
 
   static int _isoWeekYear(DateTime date) {
     return date.add(Duration(days: DateTime.thursday - date.weekday)).year;
+  }
+
+  static Set<String> _completedPeriodKeys({
+    required Goal goal,
+    required DateTime now,
+    required List<TimeSession> sessions,
+    RunningTimerSnapshot? runningTimer,
+  }) {
+    final totals = <String, int>{};
+
+    if (goal.type == GoalType.time) {
+      for (final session in sessions) {
+        if (session.category != goal.category) continue;
+        if (isBeforeGoalStart(goal, session.date)) continue;
+        final key = getCurrentPeriodKey(goal, session.date);
+        totals[key] = (totals[key] ?? 0) + session.durationSeconds;
+      }
+      if (runningTimer != null &&
+          runningTimer.isRunning &&
+          runningTimer.category == goal.category) {
+        final key = getCurrentPeriodKey(goal, now);
+        totals[key] = (totals[key] ?? 0) + runningTimer.currentElapsed;
+      }
+    } else {
+      for (final entry in goal.completionHistory.entries) {
+        final date = _parseHistoryDate(entry.key);
+        if (date == null || date.isBefore(_taipeiDay(goal.startDate))) continue;
+        final key = getCurrentPeriodKey(goal, date);
+        totals[key] = (totals[key] ?? 0) + entry.value;
+      }
+    }
+
+    final target = targetValue(goal);
+    return totals.entries
+        .where((entry) => entry.value >= target)
+        .map((entry) => entry.key)
+        .toSet();
+  }
+
+  static int _longestCompletedStreak({
+    required Goal goal,
+    required DateTime now,
+    required Set<String> completedKeys,
+    bool restrictToCurrentMonth = false,
+  }) {
+    final periods = <String>[];
+    var cursor = _periodRange(goal.period, goal.startDate).start;
+    final end = _periodRange(goal.period, now).start;
+
+    while (!cursor.isAfter(end)) {
+      if (!restrictToCurrentMonth ||
+          (cursor.year == now.toLocal().year && cursor.month == now.toLocal().month)) {
+        periods.add(getCurrentPeriodKey(goal, cursor));
+      }
+      cursor = _nextPeriodStart(goal.period, cursor);
+    }
+
+    var current = 0;
+    var longest = 0;
+    for (final key in periods) {
+      if (completedKeys.contains(key)) {
+        current += 1;
+        if (current > longest) longest = current;
+      } else {
+        current = 0;
+      }
+    }
+    return longest;
+  }
+
+  static DateTime _nextPeriodStart(GoalPeriod period, DateTime current) {
+    switch (period) {
+      case GoalPeriod.daily:
+        return current.add(const Duration(days: 1));
+      case GoalPeriod.weekly:
+        return current.add(const Duration(days: 7));
+      case GoalPeriod.monthly:
+        return DateTime(current.year, current.month + 1);
+      case GoalPeriod.yearly:
+        return DateTime(current.year + 1);
+    }
   }
 
   static String _formatValue(Goal goal, int current, int target) {

@@ -6,7 +6,7 @@ import '../providers/goal_provider.dart';
 import '../providers/task_goal_provider.dart';
 import '../providers/timer_provider.dart';
 import '../providers/current_focus_goals_provider.dart';
-import '../providers/goal_reminder_provider.dart';
+import '../services/notification_coordinator.dart';
 
 class AppLifecycleManager extends ConsumerStatefulWidget {
   final Widget child;
@@ -51,7 +51,11 @@ class _AppLifecycleManagerState extends ConsumerState<AppLifecycleManager> with 
     ]);
     ref.invalidate(currentFocusGoalProgressProvider);
     ref.invalidate(incompleteFocusGoalProgressProvider);
-    await ref.read(goalReminderProvider.notifier).refreshNow();
+    await NotificationCoordinator.instance.requestForegroundRefresh(
+      ref,
+      reason: 'app-resume',
+      force: true,
+    );
   }
 
   @override

@@ -8,7 +8,7 @@ import 'firestore_provider.dart';
 import 'session_provider.dart';
 import 'goal_provider.dart';
 import 'task_goal_provider.dart';
-import '../services/notification_service.dart';
+import '../services/notification_coordinator.dart';
 import '../models/time_session.dart';
 import '../models/goal.dart';
 
@@ -172,7 +172,7 @@ class CategoryColorNotifier extends Notifier<Map<String, Color>> {
     ].toSet();
 
     for (final goalId in goalIds) {
-      unawaited(NotificationService.cancelGoalReminder(goalId));
+      unawaited(NotificationCoordinator.instance.requestReminderCancel(goalId));
     }
   }
   

@@ -10,16 +10,13 @@ import 'focus_goal_provider.dart';
 import '../services/goal_progress_service.dart';
 import '../services/goal_action_service.dart';
 import '../services/goal_reminder_notification_service.dart';
-import '../services/notification_service.dart';
+import '../services/notification_coordinator.dart';
 import 'goal_provider.dart';
 import 'task_goal_provider.dart';
 
 class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
   Timer? _pendingActionPoller;
   bool _processingActions = false;
-  bool _refreshQueued = false;
-  DateTime? _lastNotificationRefresh;
-  int _totalGoals = 0;
   String? _lastDateKey;
 
   @override
@@ -39,31 +36,13 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
     _cancelHiddenGoalReminders(allGoals, visibleGoals);
     _ensurePendingActionPoller();
     _schedulePendingActionProcessing();
-    _scheduleNotificationRefresh(
-      progresses,
-      totalCount: allProgresses.length,
-      completedCount: completedCount,
-    );
     return progresses;
   }
 
   Future<void> refreshNow() async {
     final allGoals = ref.read(allFocusGoalsProvider);
     final visibleGoals = ref.read(visibleFocusGoalsProvider);
-    final allProgresses = ref.read(focusGoalProgressProvider);
-    final progresses = allProgresses.where((progress) => !progress.isCompleted).toList();
-    debugPrint(
-      'GoalReminderNotifier.refreshNow: '
-      'allGoals=${allGoals.length}, visibleGoals=${visibleGoals.length}, '
-      'allProgresses=${allProgresses.length}, remaining=${progresses.length}',
-    );
     _cancelHiddenGoalReminders(allGoals, visibleGoals);
-    await GoalReminderNotificationService.showOngoing(
-      progresses,
-      totalCount: allProgresses.length,
-      completedCount: allProgresses.length - progresses.length,
-    );
-    _lastNotificationRefresh = DateTime.now();
   }
 
   void _ensurePendingActionPoller() {
@@ -76,43 +55,10 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
         ref.invalidate(incompleteFocusGoalProgressProvider);
       }
       _schedulePendingActionProcessing();
-      final allProgresses = ref.read(focusGoalProgressProvider);
-      _scheduleNotificationRefresh(
-        state,
-        totalCount: allProgresses.length,
-        completedCount: allProgresses.length - state.length,
-      );
     });
     ref.onDispose(() {
       _pendingActionPoller?.cancel();
       _pendingActionPoller = null;
-    });
-  }
-
-  void _scheduleNotificationRefresh(
-    List<GoalProgress> progresses, {
-    required int totalCount,
-    required int completedCount,
-  }) {
-    if (_refreshQueued) return;
-    final now = DateTime.now();
-    final last = _lastNotificationRefresh;
-    if (last != null && now.difference(last) < const Duration(seconds: 1)) {
-      return;
-    }
-
-    _refreshQueued = true;
-    Future.microtask(() async {
-      try {
-        await GoalReminderNotificationService.showOngoing(
-          progresses,
-          totalCount: totalCount,
-          completedCount: completedCount,
-        );
-        _lastNotificationRefresh = DateTime.now();
-      } finally {
-        _refreshQueued = false;
-      }
     });
   }
 
@@ -139,11 +85,11 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
     final visibleIds = visibleGoals.map((goal) => goal.id).toSet();
     for (final goal in allGoals) {
       if (!goal.isReminderEnabled || goal.reminderTime == null) {
-        unawaited(NotificationService.cancelGoalReminder(goal.id));
+        unawaited(NotificationCoordinator.instance.requestReminderCancel(goal.id));
         continue;
       }
       if (!visibleIds.contains(goal.id)) {
-        unawaited(NotificationService.cancelGoalReminder(goal.id));
+        unawaited(NotificationCoordinator.instance.requestReminderCancel(goal.id));
       }
     }
   }

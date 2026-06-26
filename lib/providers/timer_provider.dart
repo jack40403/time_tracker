@@ -15,6 +15,7 @@ import 'firestore_provider.dart';
 import 'category_provider.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:flutter_background_service/flutter_background_service.dart';
+import '../services/background_timer_service.dart';
 import '../services/media_session_service.dart';
 
 class TimerColorNotifier extends Notifier<Color> {
@@ -430,17 +431,29 @@ class TimerNotifier extends Notifier<TimerState> {
   void _syncToBackground() async {
     if (kIsWeb) return;
     try {
+      final timerStartedAtEpochMs = state.isRunning
+          ? (state.startTime ?? state.startedAt)?.millisecondsSinceEpoch
+          : null;
+      final timerStateLabel = state.isRunning
+          ? '正在計時'
+          : (state.currentElapsed > 0 ? '計時已暫停' : '計時準備中');
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('bg_handoff_state', jsonEncode({
         'seconds': state.currentElapsed,
         'category': state.category,
         'isRunning': state.isRunning,
+        'isTimerActive': state.isRunning || state.currentElapsed > 0,
+        'timerStateLabel': timerStateLabel,
+        'timerStartedAtEpochMs': timerStartedAtEpochMs,
       }));
 
       FlutterBackgroundService().invoke('setTimerData', {
         'seconds': state.currentElapsed,
         'category': state.category,
         'isRunning': state.isRunning,
+        'isTimerActive': state.isRunning || state.currentElapsed > 0,
+        'timerStateLabel': timerStateLabel,
+        'timerStartedAtEpochMs': timerStartedAtEpochMs,
       });
     } catch (e) {
        debugPrint('Background sync failed: $e');
@@ -587,7 +600,7 @@ class TimerNotifier extends Notifier<TimerState> {
       );
       if (!kIsWeb) {
         try {
-          FlutterBackgroundService().startService();
+          unawaited(ensureBackgroundTimerServiceRunning());
         } catch (e) {
           debugPrint('TimerNotifier: startService failed: $e');
         }
@@ -649,7 +662,9 @@ class TimerNotifier extends Notifier<TimerState> {
         MediaSessionService.updateMetadata(snapshot.category, '00:00');
       }
       state = TimerState(category: snapshot.category);
-      if (!kIsWeb) FlutterBackgroundService().invoke('stopService');
+      if (!kIsWeb) {
+        unawaited(stopBackgroundTimerService());
+      }
       _syncToLiveActivity();
       _syncToWidget();
       _saveLocally();
@@ -718,7 +733,7 @@ class TimerNotifier extends Notifier<TimerState> {
         _syncToWidget();
         if (!kIsWeb) {
           try {
-            FlutterBackgroundService().invoke('stopService');
+            await stopBackgroundTimerService();
           } catch (e) {
             debugPrint('TimerNotifier: stopService after empty server sync failed: $e');
           }
@@ -731,7 +746,7 @@ class TimerNotifier extends Notifier<TimerState> {
 
       if (!remote.isRunning && !kIsWeb) {
         try {
-          FlutterBackgroundService().invoke('stopService');
+          await stopBackgroundTimerService();
         } catch (e) {
           debugPrint('TimerNotifier: stopService after remote stop failed: $e');
         }
@@ -767,7 +782,7 @@ class TimerNotifier extends Notifier<TimerState> {
       debugPrint('TimerNotifier: Zombie detected! Restarting killed background service...');
       // Ensure handoff buffer is fresh before starting
       _syncToBackground();
-      await service.startService();
+      await ensureBackgroundTimerServiceRunning();
     }
   }
 }

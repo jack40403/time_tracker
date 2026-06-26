@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,9 +12,11 @@ import 'services/update_service.dart';
 import 'services/background_timer_service.dart';
 import 'services/notification_service.dart';
 import 'services/goal_reminder_notification_service.dart';
+import 'services/notification_coordinator.dart';
 import 'providers/layout_provider.dart';
 import 'providers/theme_provider.dart';
-import 'providers/goal_reminder_provider.dart';
+import 'providers/current_focus_goals_provider.dart';
+import 'providers/timer_provider.dart';
 import 'navigation/app_navigator.dart';
 import 'firebase_options.dart';
 import 'widgets/splash_screen.dart';
@@ -54,8 +58,13 @@ void main() async {
           await timerNotifChannel.invokeMethod('show', {
             'title': data['title'],
             'content': data['content'],
+            'timerCategory': data['timerCategory'],
+            'timerStateLabel': data['timerStateLabel'],
+            'focusSummary': data['focusSummary'],
+            'focusDetail': data['focusDetail'],
             'isRunning': data['isRunning'],
-            'elapsedSeconds': data['elapsedSeconds'],
+            'isTimerActive': data['isTimerActive'],
+            'timerStartedAtEpochMs': data['timerStartedAtEpochMs'],
           });
         } catch (e) {
           debugPrint('TimerNotification relay failed: $e');
@@ -90,8 +99,35 @@ class TimeTrackerApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(themeModeProvider);
     final appTheme = ref.watch(currentAppThemeProvider);
-    ref.listen(goalReminderProvider, (_, _) {});
+    ref.listen(timerProvider, (previous, next) {
+      final force = previous == null ||
+          previous.isRunning != next.isRunning ||
+          previous.category != next.category ||
+          previous.currentElapsed <= 0 != (next.currentElapsed <= 0);
+      unawaited(
+        NotificationCoordinator.instance.requestForegroundRefresh(
+          ref,
+          reason: 'timer-state',
+          force: force,
+        ),
+      );
+    });
+    ref.listen(currentFocusGoalProgressProvider, (previous, next) {
+      unawaited(
+        NotificationCoordinator.instance.requestForegroundRefresh(
+          ref,
+          reason: 'focus-progress',
+        ),
+      );
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(
+        NotificationCoordinator.instance.requestForegroundRefresh(
+          ref,
+          reason: 'app-build',
+          force: true,
+        ),
+      );
       GoalReminderNotificationService.openPanelAfterLaunchIfNeeded();
     });
     // 每個 AppTheme 有固定設計亮度，強制 Material theme 跟著走，避免系統亮度不符造成文字撞背景

@@ -15,14 +15,24 @@ class MainActivity : FlutterActivity() {
                 if (call.method == "show") {
                     val title = call.argument<String>("title") ?: ""
                     val content = call.argument<String>("content") ?: ""
+                    val timerCategory = call.argument<String>("timerCategory") ?: ""
+                    val timerStateLabel = call.argument<String>("timerStateLabel") ?: ""
+                    val focusSummary = call.argument<String>("focusSummary") ?: ""
+                    val focusDetail = call.argument<String>("focusDetail") ?: ""
                     val isRunning = call.argument<Boolean>("isRunning") ?: false
-                    val elapsedSeconds = call.argument<Int>("elapsedSeconds") ?: 0
+                    val isTimerActive = call.argument<Boolean>("isTimerActive") ?: false
+                    val timerStartedAtEpochMs = call.argument<Number>("timerStartedAtEpochMs")?.toLong()
                     TimerNotificationManager.show(
                         applicationContext,
                         title,
                         content,
+                        timerCategory,
+                        timerStateLabel,
+                        focusSummary,
+                        focusDetail,
                         isRunning,
-                        elapsedSeconds
+                        isTimerActive,
+                        timerStartedAtEpochMs
                     )
                     result.success(null)
                 } else {
