@@ -55,6 +55,7 @@ void main() async {
             'title': data['title'],
             'content': data['content'],
             'isRunning': data['isRunning'],
+            'elapsedSeconds': data['elapsedSeconds'],
           });
         } catch (e) {
           debugPrint('TimerNotification relay failed: $e');
@@ -222,4 +223,3 @@ class TimeTrackerApp extends ConsumerWidget {
     );
   }
 }
-

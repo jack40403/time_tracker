@@ -16,7 +16,14 @@ class MainActivity : FlutterActivity() {
                     val title = call.argument<String>("title") ?: ""
                     val content = call.argument<String>("content") ?: ""
                     val isRunning = call.argument<Boolean>("isRunning") ?: false
-                    TimerNotificationManager.show(applicationContext, title, content, isRunning)
+                    val elapsedSeconds = call.argument<Int>("elapsedSeconds") ?: 0
+                    TimerNotificationManager.show(
+                        applicationContext,
+                        title,
+                        content,
+                        isRunning,
+                        elapsedSeconds
+                    )
                     result.success(null)
                 } else {
                     result.notImplemented()
