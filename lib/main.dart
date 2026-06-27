@@ -10,9 +10,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'services/update_service.dart';
 import 'services/background_timer_service.dart';
+import 'services/focus_notification_service.dart';
 import 'services/notification_launch_service.dart';
 import 'services/notification_service.dart';
-import 'services/goal_reminder_notification_service.dart';
 import 'services/notification_coordinator.dart';
 import 'providers/layout_provider.dart';
 import 'providers/theme_provider.dart';
@@ -46,6 +46,7 @@ void main() async {
   if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
     await initializeService();
     await NotificationService.init();
+    await FocusNotificationService.initialize();
   }
 
   // Listen for notification update events from background service and relay to Kotlin.
@@ -113,7 +114,6 @@ class _TimeTrackerAppState extends ConsumerState<TimeTrackerApp> {
         ),
       );
       unawaited(NotificationLaunchService.consumePendingTarget());
-      GoalReminderNotificationService.openPanelAfterLaunchIfNeeded();
     });
   }
 

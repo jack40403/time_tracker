@@ -5,8 +5,6 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../navigation/app_navigator.dart';
-
 class GoalReminderAction {
   const GoalReminderAction({
     required this.goalId,
@@ -34,9 +32,6 @@ class GoalReminderNotificationService {
   static const String channelName = '專注目標提醒';
   static const int notificationId = 889;
   static const String _pendingActionsKey = 'goal_reminder_pending_actions';
-  static const String _openPanelPayload = 'open_quick_focus_panel';
-  static bool _shouldOpenPanelAfterLaunch = false;
-
   static final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
 
@@ -81,11 +76,6 @@ class GoalReminderNotificationService {
   static Future<void> handleNotificationResponse(
     NotificationResponse response,
   ) async {
-    if (response.payload == _openPanelPayload && response.actionId == null) {
-      await openQuickFocusPanel();
-      return;
-    }
-
     final actionId = response.actionId;
     if (actionId == null || !actionId.startsWith('goal_')) return;
 
@@ -132,15 +122,9 @@ class GoalReminderNotificationService {
     return GoalReminderAction(goalId: goalId, action: action);
   }
 
-  static bool isOpenPanelPayload(String? payload) => payload == _openPanelPayload;
+  static bool isOpenPanelPayload(String? payload) => false;
 
-  static void markOpenPanelAfterLaunch() {
-    _shouldOpenPanelAfterLaunch = true;
-  }
+  static void markOpenPanelAfterLaunch() {}
 
-  static Future<void> openPanelAfterLaunchIfNeeded() async {
-    if (!_shouldOpenPanelAfterLaunch) return;
-    _shouldOpenPanelAfterLaunch = false;
-    await openQuickFocusPanel();
-  }
+  static Future<void> openPanelAfterLaunchIfNeeded() async {}
 }

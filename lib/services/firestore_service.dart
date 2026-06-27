@@ -247,6 +247,15 @@ class FirestoreService {
     await upsertActiveTimerState(state);
   }
 
+  Future<void> clearActiveTimerState() async {
+    debugPrint('FirestoreService: Clearing active timer state for $userId');
+    try {
+      await _activeTimerRef.delete();
+    } catch (e) {
+      debugPrint('FirestoreService Error clearing timer state: $e');
+    }
+  }
+
   Future<Map<String, dynamic>?> stopActiveTimerRecord({
     required String deviceId,
     required DateTime stoppedAt,

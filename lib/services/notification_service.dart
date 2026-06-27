@@ -7,6 +7,7 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
 import '../models/goal.dart';
 import 'goal_reminder_notification_service.dart';
+import 'notification_launch_service.dart';
 
 @pragma('vm:entry-point')
 void onNotificationResponse(NotificationResponse response) {
@@ -36,11 +37,9 @@ class NotificationService {
     );
 
     final launchDetails = await _notifications.getNotificationAppLaunchDetails();
-    if (GoalReminderNotificationService.isOpenPanelPayload(
+    NotificationLaunchService.setPendingRoute(
       launchDetails?.notificationResponse?.payload,
-    )) {
-      GoalReminderNotificationService.markOpenPanelAfterLaunch();
-    }
+    );
 
     await _notifications.initialize(
       initSettings,
@@ -59,6 +58,7 @@ class NotificationService {
   static Future<void> handleNotificationResponse(
     NotificationResponse response,
   ) async {
+    await NotificationLaunchService.handleNotificationPayload(response.payload);
     await GoalReminderNotificationService.handleNotificationResponse(response);
   }
 
