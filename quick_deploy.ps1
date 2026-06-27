@@ -1,9 +1,16 @@
 # Me Time - local deploy script
 
+Set-Location $PSScriptRoot
+
 Write-Host "--- [1/6] Preparing release version... ---" -ForegroundColor Cyan
 $pubspecPath = "pubspec.yaml"
 $keyPropertiesPath = "android/key.properties"
 $releaseKeystorePath = "android/app/upload-keystore.jks"
+$flutterCmd = "C:\\flutter\\bin\\flutter.bat"
+
+if (!(Test-Path $flutterCmd)) {
+    throw "Flutter SDK not found at $flutterCmd"
+}
 
 if (!(Test-Path $keyPropertiesPath)) {
     throw "Missing android/key.properties. Refusing to build a release APK with the debug signing key."
@@ -37,14 +44,14 @@ $buildNumber = [int64]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
 Write-Host "Using release version: $versionName+$buildNumber" -ForegroundColor Yellow
 
 Write-Host "--- [2/6] Building Android APK... ---" -ForegroundColor Cyan
-flutter build apk --release --build-name=$versionName --build-number=$buildNumber
+& $flutterCmd build apk --release --build-name=$versionName --build-number=$buildNumber
 if ($LASTEXITCODE -ne 0) { throw "APK build failed." }
 
 Write-Host "--- [3/6] Cleaning and preparing web folder... ---" -ForegroundColor Cyan
 if (Test-Path "build/web") { Remove-Item -Recurse -Force "build/web" }
 
 Write-Host "--- [4/6] Building Web... ---" -ForegroundColor Cyan
-flutter build web --release --pwa-strategy=none
+& $flutterCmd build web --release --pwa-strategy=none
 if ($LASTEXITCODE -ne 0) { throw "Web build failed." }
 
 Write-Host "--- [5/6] Syncing APK and metadata... ---" -ForegroundColor Cyan

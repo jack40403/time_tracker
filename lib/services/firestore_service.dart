@@ -247,6 +247,15 @@ class FirestoreService {
     await upsertActiveTimerState(state);
   }
 
+  Future<void> clearActiveTimerState() async {
+    debugPrint('FirestoreService: Clearing active timer state for $userId');
+    try {
+      await _activeTimerRef.delete();
+    } catch (e) {
+      debugPrint('FirestoreService Error clearing timer state: $e');
+    }
+  }
+
   Future<Map<String, dynamic>?> stopActiveTimerRecord({
     required String deviceId,
     required DateTime stoppedAt,
@@ -348,6 +357,45 @@ class FirestoreService {
     } catch (e) {
       debugPrint('FirestoreService Error saving single goal: $e');
     }
+  }
+
+  Future<Map<String, dynamic>?> applyTaskGoalAction({
+    required String goalId,
+    required String dateKey,
+    required String action,
+  }) async {
+    final goalRef = _taskGoalsRef.doc(goalId);
+    return _db.runTransaction<Map<String, dynamic>?>((transaction) async {
+      final snapshot = await transaction.get(goalRef);
+      if (!snapshot.exists) return null;
+
+      final data = Map<String, dynamic>.from(snapshot.data() as Map);
+      final type = data['type']?.toString() ?? 'task';
+      final history = Map<String, dynamic>.from(
+        data['completionHistory'] as Map? ?? const <String, dynamic>{},
+      );
+      final current = (history[dateKey] as num?)?.toInt() ?? 0;
+      int next;
+      if (action == 'complete' && type == 'binary') {
+        next = 1;
+      } else if (action == 'increment' && type == 'task') {
+        next = current + 1;
+      } else if (action == 'decrement' && type == 'task') {
+        next = current > 0 ? current - 1 : 0;
+      } else {
+        return data;
+      }
+
+      history[dateKey] = next;
+      final updatedAt = DateTime.now().toUtc().toIso8601String();
+      transaction.update(goalRef, {
+        'completionHistory': history,
+        'updatedAt': updatedAt,
+      });
+      data['completionHistory'] = history;
+      data['updatedAt'] = updatedAt;
+      return data;
+    });
   }
 
   Future<void> deleteGoalById(String id, {bool isTaskGoal = false}) async {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -10,7 +11,9 @@ import 'firestore_provider.dart';
 import 'session_provider.dart';
 import 'category_provider.dart';
 import 'timer_provider.dart';
-import '../services/notification_service.dart';
+import '../services/notification_coordinator.dart';
+import '../services/goal_progress_service.dart';
+import '../models/goal_progress.dart';
 
 class GoalNotifier extends Notifier<List<Goal>> {
   static const _storageKey = 'goals_time_v4';
@@ -203,7 +206,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
     _checkMilestones();
     
     // 安排鬧鐘提醒
-    NotificationService.scheduleGoalReminder(newGoal);
+    unawaited(NotificationCoordinator.instance.requestReminderSchedule(newGoal));
     
     return newGoal.id;
   }
@@ -234,7 +237,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
     _saveSingleLocal(goal, isDelete: true);
     
     // 取消鬧鐘提醒
-    NotificationService.cancelGoalReminder(id);
+    unawaited(NotificationCoordinator.instance.requestReminderCancel(id));
   }
 
   Future<void> deleteGoalsByCategory(String category) async {
@@ -312,7 +315,7 @@ class GoalNotifier extends Notifier<List<Goal>> {
     _checkMilestones();
 
     // 更新鬧鐘提醒
-    NotificationService.scheduleGoalReminder(withTimestamp);
+    unawaited(NotificationCoordinator.instance.requestReminderSchedule(withTimestamp));
   }
 
   void setManualValue(String id, DateTime date, int val) {
@@ -387,47 +390,19 @@ class GoalNotifier extends Notifier<List<Goal>> {
   }
 
   double getProgress(Goal goal, {DateTime? atDate}) {
-    final targetDate = atDate ?? DateTime.now();
-    final allSessions = ref.read(sessionsProvider);
-    final String cat = goal.category;
-    int currentSeconds = 0;
-    final timerState = ref.read(timerProvider);
-
-    for (var s in allSessions) {
-      if (s.category == cat) {
-        final d = s.date.toLocal();
-        // 關鍵核心：僅統計起始日期之後的數據
-        if (d.isBefore(goal.startDate.subtract(const Duration(seconds: 1)))) continue;
-        
-        bool match = false;
-        if (goal.period == GoalPeriod.daily) {
-          match = d.year == targetDate.year && d.month == targetDate.month && d.day == targetDate.day;
-        } else if (goal.period == GoalPeriod.weekly) {
-          final monday = targetDate.subtract(Duration(days: targetDate.weekday - 1));
-          final start = DateTime(monday.year, monday.month, monday.day);
-          final end = DateTime(targetDate.year, targetDate.month, targetDate.day, 23, 59, 59);
-          match = d.isAfter(start.subtract(const Duration(seconds: 1))) && d.isBefore(end);
-        } else if (goal.period == GoalPeriod.monthly) {
-          match = d.year == targetDate.year && d.month == targetDate.month;
-        } else if (goal.period == GoalPeriod.yearly) {
-          match = d.year == targetDate.year;
-        }
-        if (match) currentSeconds += s.durationSeconds;
-      }
-    }
-
-    final now = DateTime.now();
-    final isCurrentDay = targetDate.year == now.year && targetDate.month == now.month && targetDate.day == now.day;
-    if (goal.type == GoalType.time &&
-        isCurrentDay &&
-        !now.isBefore(goal.startDate.subtract(const Duration(seconds: 1))) &&
-        timerState.isRunning &&
-        timerState.category == cat) {
-      currentSeconds += timerState.currentElapsed;
-    }
-
-    if (goal.targetSeconds <= 0) return 1.0;
-    return (currentSeconds / goal.targetSeconds).clamp(0.0, 1.0);
+    final timer = ref.read(timerProvider);
+    return GoalProgressService.buildProgress(
+      goal: goal,
+      now: atDate ?? DateTime.now(),
+      sessions: ref.read(sessionsProvider),
+      runningTimer: RunningTimerSnapshot(
+        isRunning: timer.isRunning,
+        category: timer.category,
+        startTime: timer.startTime,
+        baseSeconds: timer.baseSeconds,
+        currentElapsed: timer.currentElapsed,
+      ),
+    ).progress;
   }
 
   void _checkMilestones() {
@@ -460,24 +435,19 @@ class GoalNotifier extends Notifier<List<Goal>> {
   }
 
   String getRemainingText(Goal goal) {
-    final progress = getProgress(goal);
-    if (progress >= 1.0) return '已達成！ 🎉';
-    final now = DateTime.now();
-    final dateKey = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     final timerState = ref.read(timerProvider);
-    final currentToday = (goal.completionHistory[dateKey] ?? 0) +
-        ((goal.type == GoalType.time &&
-                !now.isBefore(goal.startDate.subtract(const Duration(seconds: 1))) &&
-                timerState.isRunning &&
-                timerState.category == goal.category)
-            ? timerState.currentElapsed
-            : 0);
-    final remainingSeconds = goal.targetSeconds - currentToday;
-    if (remainingSeconds <= 0) return '已達成！ 🎉';
-    final hrs = remainingSeconds ~/ 3600;
-    final mins = (remainingSeconds % 3600) ~/ 60;
-    if (hrs > 0) return '還差 ${hrs}h ${mins}m';
-    return '還差 ${mins}m';
+    return GoalProgressService.buildProgress(
+      goal: goal,
+      now: DateTime.now(),
+      sessions: ref.read(sessionsProvider),
+      runningTimer: RunningTimerSnapshot(
+        isRunning: timerState.isRunning,
+        category: timerState.category,
+        startTime: timerState.startTime,
+        baseSeconds: timerState.baseSeconds,
+        currentElapsed: timerState.currentElapsed,
+      ),
+    ).remainingText;
   }
 
   Map<String, String> getRecords(Goal goal) {

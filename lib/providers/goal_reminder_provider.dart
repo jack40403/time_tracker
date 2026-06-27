@@ -5,18 +5,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/goal.dart';
 import '../models/goal_progress.dart';
+import 'current_focus_goals_provider.dart';
 import 'focus_goal_provider.dart';
 import '../services/goal_progress_service.dart';
+import '../services/goal_action_service.dart';
 import '../services/goal_reminder_notification_service.dart';
-import '../services/notification_service.dart';
+import '../services/notification_coordinator.dart';
 import 'goal_provider.dart';
 import 'task_goal_provider.dart';
 
 class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
   Timer? _pendingActionPoller;
   bool _processingActions = false;
-  bool _refreshQueued = false;
-  DateTime? _lastNotificationRefresh;
+  String? _lastDateKey;
 
   @override
   List<GoalProgress> build() {
@@ -35,74 +36,29 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
     _cancelHiddenGoalReminders(allGoals, visibleGoals);
     _ensurePendingActionPoller();
     _schedulePendingActionProcessing();
-    _scheduleNotificationRefresh(
-      progresses,
-      totalCount: allProgresses.length,
-      completedCount: completedCount,
-    );
     return progresses;
   }
 
   Future<void> refreshNow() async {
     final allGoals = ref.read(allFocusGoalsProvider);
     final visibleGoals = ref.read(visibleFocusGoalsProvider);
-    final allProgresses = ref.read(focusGoalProgressProvider);
-    final progresses = allProgresses.where((progress) => !progress.isCompleted).toList();
-    debugPrint(
-      'GoalReminderNotifier.refreshNow: '
-      'allGoals=${allGoals.length}, visibleGoals=${visibleGoals.length}, '
-      'allProgresses=${allProgresses.length}, remaining=${progresses.length}',
-    );
     _cancelHiddenGoalReminders(allGoals, visibleGoals);
-    await GoalReminderNotificationService.showOngoing(
-      progresses,
-      totalCount: allProgresses.length,
-      completedCount: allProgresses.length - progresses.length,
-    );
-    _lastNotificationRefresh = DateTime.now();
   }
 
   void _ensurePendingActionPoller() {
     if (_pendingActionPoller != null) return;
     _pendingActionPoller = Timer.periodic(const Duration(seconds: 1), (_) {
+      final dateKey = GoalProgressService.dateKey(DateTime.now());
+      if (dateKey != _lastDateKey) {
+        _lastDateKey = dateKey;
+        ref.invalidate(currentFocusGoalProgressProvider);
+        ref.invalidate(incompleteFocusGoalProgressProvider);
+      }
       _schedulePendingActionProcessing();
-      final allProgresses = ref.read(focusGoalProgressProvider);
-      _scheduleNotificationRefresh(
-        state,
-        totalCount: allProgresses.length,
-        completedCount: allProgresses.length - state.length,
-      );
     });
     ref.onDispose(() {
       _pendingActionPoller?.cancel();
       _pendingActionPoller = null;
-    });
-  }
-
-  void _scheduleNotificationRefresh(
-    List<GoalProgress> progresses, {
-    required int totalCount,
-    required int completedCount,
-  }) {
-    if (_refreshQueued) return;
-    final now = DateTime.now();
-    final last = _lastNotificationRefresh;
-    if (last != null && now.difference(last) < const Duration(seconds: 1)) {
-      return;
-    }
-
-    _refreshQueued = true;
-    Future.microtask(() async {
-      try {
-        await GoalReminderNotificationService.showOngoing(
-          progresses,
-          totalCount: totalCount,
-          completedCount: completedCount,
-        );
-        _lastNotificationRefresh = DateTime.now();
-      } finally {
-        _refreshQueued = false;
-      }
     });
   }
 
@@ -111,10 +67,13 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
     _processingActions = true;
     Future.microtask(() async {
       try {
+        if (await GoalActionService.takeRefreshRequest()) {
+          await ref.read(taskGoalProvider.notifier).reloadFromStorage();
+        }
         final actions = await GoalReminderNotificationService.takePendingActions();
         if (actions.isEmpty) return;
         for (final action in actions) {
-          _applyAction(action);
+          await _applyAction(action);
         }
       } finally {
         _processingActions = false;
@@ -126,16 +85,16 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
     final visibleIds = visibleGoals.map((goal) => goal.id).toSet();
     for (final goal in allGoals) {
       if (!goal.isReminderEnabled || goal.reminderTime == null) {
-        unawaited(NotificationService.cancelGoalReminder(goal.id));
+        unawaited(NotificationCoordinator.instance.requestReminderCancel(goal.id));
         continue;
       }
       if (!visibleIds.contains(goal.id)) {
-        unawaited(NotificationService.cancelGoalReminder(goal.id));
+        unawaited(NotificationCoordinator.instance.requestReminderCancel(goal.id));
       }
     }
   }
 
-  void _applyAction(GoalReminderAction action) {
+  Future<void> _applyAction(GoalReminderAction action) async {
     final allGoals = ref.read(allFocusGoalsProvider);
     Goal? goal;
     for (final candidate in allGoals) {
@@ -145,22 +104,23 @@ class GoalReminderNotifier extends Notifier<List<GoalProgress>> {
       }
     }
     if (goal == null) return;
+    final selectedGoal = goal;
 
     final now = DateTime.now();
     final todayKey = GoalProgressService.dateKey(now);
-    final current = goal.completionHistory[todayKey] ?? 0;
-    final notifier = _goalNotifierFor(goal);
+    final current = selectedGoal.completionHistory[todayKey] ?? 0;
+    final notifier = _goalNotifierFor(selectedGoal);
 
-    if (action.action == 'complete' && goal.type == GoalType.binary) {
-      notifier.setManualValue(goal.id, now, 1);
+    if (action.action == 'complete' && selectedGoal.type == GoalType.binary) {
+      await Future.sync(() => notifier.setManualValue(selectedGoal.id, now, 1));
       return;
     }
 
-    if (goal.type != GoalType.task) return;
+    if (selectedGoal.type != GoalType.task) return;
     if (action.action == 'increment') {
-      notifier.setManualValue(goal.id, now, current + 1);
+      await Future.sync(() => notifier.setManualValue(selectedGoal.id, now, current + 1));
     } else if (action.action == 'decrement') {
-      notifier.setManualValue(goal.id, now, current > 0 ? current - 1 : 0);
+      await Future.sync(() => notifier.setManualValue(selectedGoal.id, now, current > 0 ? current - 1 : 0));
     }
   }
 

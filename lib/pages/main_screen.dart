@@ -1,40 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../services/update_service.dart';
+
 import '../providers/app_theme_provider.dart';
 import '../providers/main_tab_provider.dart';
-import 'home_page.dart';
-import 'statistics_page.dart';
-import 'history_page.dart';
+import '../services/update_service.dart';
 import 'goals_page.dart';
+import 'history_page.dart';
+import 'home_page.dart';
 import 'settings_page.dart';
+import 'statistics_page.dart';
 
 class MainScreen extends ConsumerStatefulWidget {
   const MainScreen({super.key});
+
   @override
   ConsumerState<MainScreen> createState() => _MainScreenState();
 }
 
 class _MainScreenState extends ConsumerState<MainScreen> {
-  final List<Widget> _pages = [
-    const HomePage(),
-    const StatisticsPage(),
-    const GoalsPage(),
-    const HistoryPage(),
-    const SettingsPage(),
+  final List<Widget> _pages = const [
+    HomePage(),
+    StatisticsPage(),
+    GoalsPage(),
+    HistoryPage(),
+    SettingsPage(),
   ];
 
   @override
   void initState() {
     super.initState();
-    // 啟動時檢查更新
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // 1. 檢查更新
       final info = await UpdateService.checkUpdate();
       if (info != null && mounted) {
         UpdateService.showUpdateDialog(context, info);
       }
-
     });
   }
 
@@ -53,7 +52,11 @@ class _MainScreenState extends ConsumerState<MainScreen> {
           color: t.navBg,
           border: Border(top: BorderSide(color: t.navBorder, width: 3)),
           boxShadow: [
-            BoxShadow(color: t.navBorder.withOpacity(0.3), offset: const Offset(0, -3), blurRadius: 0),
+            BoxShadow(
+              color: t.navBorder.withOpacity(0.3),
+              offset: const Offset(0, -3),
+              blurRadius: 0,
+            ),
           ],
         ),
         child: NavigationBarTheme(
@@ -67,7 +70,8 @@ class _MainScreenState extends ConsumerState<MainScreen> {
           ),
           child: NavigationBar(
             selectedIndex: currentIndex,
-            onDestinationSelected: (index) => ref.read(mainTabIndexProvider.notifier).setIndex(index),
+            onDestinationSelected: (index) =>
+                ref.read(mainTabIndexProvider.notifier).setIndex(index),
             backgroundColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
             shadowColor: Colors.transparent,
@@ -76,11 +80,31 @@ class _MainScreenState extends ConsumerState<MainScreen> {
               TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: t.navInk),
             ),
             destinations: const [
-              NavigationDestination(icon: Icon(Icons.timer_outlined), selectedIcon: Icon(Icons.timer_rounded), label: '計時'),
-              NavigationDestination(icon: Icon(Icons.bar_chart_outlined), selectedIcon: Icon(Icons.bar_chart_rounded), label: '統計'),
-              NavigationDestination(icon: Icon(Icons.flag_outlined), selectedIcon: Icon(Icons.flag_rounded), label: '目標'),
-              NavigationDestination(icon: Icon(Icons.history_outlined), selectedIcon: Icon(Icons.history_rounded), label: '歷史'),
-              NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings_rounded), label: '設定'),
+              NavigationDestination(
+                icon: Icon(Icons.timer_outlined),
+                selectedIcon: Icon(Icons.timer_rounded),
+                label: '計時',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.bar_chart_outlined),
+                selectedIcon: Icon(Icons.bar_chart_rounded),
+                label: '統計',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.flag_outlined),
+                selectedIcon: Icon(Icons.flag_rounded),
+                label: '目標',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.history_outlined),
+                selectedIcon: Icon(Icons.history_rounded),
+                label: '歷史',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings_rounded),
+                label: '設定',
+              ),
             ],
           ),
         ),

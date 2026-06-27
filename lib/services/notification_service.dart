@@ -1,16 +1,17 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import '../models/goal.dart';
 import 'goal_reminder_notification_service.dart';
+import 'notification_launch_service.dart';
 
 @pragma('vm:entry-point')
 void onNotificationResponse(NotificationResponse response) {
-  unawaited(GoalReminderNotificationService.handleNotificationResponse(response));
+  unawaited(NotificationService.handleNotificationResponse(response));
 }
 
 class NotificationService {
@@ -36,11 +37,9 @@ class NotificationService {
     );
 
     final launchDetails = await _notifications.getNotificationAppLaunchDetails();
-    if (GoalReminderNotificationService.isOpenPanelPayload(
+    NotificationLaunchService.setPendingRoute(
       launchDetails?.notificationResponse?.payload,
-    )) {
-      GoalReminderNotificationService.markOpenPanelAfterLaunch();
-    }
+    );
 
     await _notifications.initialize(
       initSettings,
@@ -54,6 +53,13 @@ class NotificationService {
     debugPrint('NotificationService.init: Android notifications permission = $permissionGranted');
 
     await GoalReminderNotificationService.initialize();
+  }
+
+  static Future<void> handleNotificationResponse(
+    NotificationResponse response,
+  ) async {
+    await NotificationLaunchService.handleNotificationPayload(response.payload);
+    await GoalReminderNotificationService.handleNotificationResponse(response);
   }
 
   static Future<void> scheduleGoalReminder(Goal goal) async {

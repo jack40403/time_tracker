@@ -1,58 +1,92 @@
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
 import 'package:home_widget/home_widget.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:shared_preferences/shared_preferences.dart';
 
-// Notification Channel constants
-const String notificationChannelId = 'timer_foreground_service_v3_silent';
+const String notificationChannelId = 'timer_foreground_channel';
 const int notificationId = 888;
+
+bool _serviceConfigured = false;
+bool _serviceStartInFlight = false;
+
+class _TimerNotificationSnapshot {
+  const _TimerNotificationSnapshot({
+    required this.serviceTitle,
+    required this.serviceContent,
+    required this.timerCategory,
+    required this.timerStateLabel,
+    required this.isRunning,
+    required this.isTimerActive,
+    required this.timerStartedAtEpochMs,
+    required this.generationId,
+  });
+
+  final String serviceTitle;
+  final String serviceContent;
+  final String timerCategory;
+  final String timerStateLabel;
+  final bool isRunning;
+  final bool isTimerActive;
+  final int? timerStartedAtEpochMs;
+  final String generationId;
+
+  String get signature => [
+        serviceTitle,
+        serviceContent,
+        timerCategory,
+        timerStateLabel,
+        isRunning,
+        isTimerActive,
+        timerStartedAtEpochMs,
+        generationId,
+      ].join('|');
+}
 
 @pragma('vm:entry-point')
 void onNotificationActionTap(NotificationResponse response) async {
   WidgetsFlutterBinding.ensureInitialized();
-  debugPrint('NotificationTap: Received action ${response.actionId}');
-  
-  if (response.actionId != null) {
-    // ATOMIC BRIDGE: Save the action to SharedPreferences so the background isolate 
-    // can pick it up even if the IPC 'invoke' signal fails.
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('pending_timer_action', response.actionId!);
-    
-    // Also try the standard IPC as a fallback
-    FlutterBackgroundService().invoke('notificationAction', {
-      'action': response.actionId,
-    });
-  }
+
+  if (response.actionId == null) return;
+
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString('pending_timer_action', response.actionId!);
+
+  FlutterBackgroundService().invoke('notificationAction', {
+    'action': response.actionId,
+  });
 }
 
 Future<void> initializeService() async {
-  final service = FlutterBackgroundService();
+  if (_serviceConfigured) return;
 
-  // Android notification channel setup
-  const AndroidNotificationChannel channel = AndroidNotificationChannel(
-    notificationChannelId, 
-    'Me Time Timer (Silent)',
-    description: 'This channel is used for the ongoing timer notification.',
-    importance: Importance.min,
+  final service = FlutterBackgroundService();
+  const channel = AndroidNotificationChannel(
+    notificationChannelId,
+    '計時器',
+    description: '維持計時前景服務。',
+    importance: Importance.low,
     enableVibration: false,
     playSound: false,
   );
 
-  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-
-  await flutterLocalNotificationsPlugin
-      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+  final notifications = FlutterLocalNotificationsPlugin();
+  await notifications
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
 
-  // Initialize notifications to handle background actions
-  const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
-  const InitializationSettings initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
-  
-  await flutterLocalNotificationsPlugin.initialize(
+  const initializationSettingsAndroid =
+      AndroidInitializationSettings('@mipmap/ic_launcher');
+  const initializationSettings = InitializationSettings(
+    android: initializationSettingsAndroid,
+  );
+
+  await notifications.initialize(
     initializationSettings,
     onDidReceiveNotificationResponse: onNotificationActionTap,
     onDidReceiveBackgroundNotificationResponse: onNotificationActionTap,
@@ -61,174 +95,283 @@ Future<void> initializeService() async {
   await service.configure(
     androidConfiguration: AndroidConfiguration(
       onStart: onStart,
-      autoStart: false, 
+      autoStart: false,
       isForegroundMode: true,
       notificationChannelId: notificationChannelId,
-      initialNotificationTitle: 'Elite Time Tracker',
-      initialNotificationContent: '計時中...', 
+      initialNotificationTitle: '計時器',
+      initialNotificationContent: '準備啟動計時',
       foregroundServiceNotificationId: notificationId,
       foregroundServiceTypes: [AndroidForegroundType.specialUse],
     ),
     iosConfiguration: IosConfiguration(),
   );
+
+  _serviceConfigured = true;
+}
+
+Future<void> ensureBackgroundTimerServiceRunning() async {
+  if (kIsWeb) return;
+
+  await initializeService();
+
+  if (_serviceStartInFlight) return;
+  final service = FlutterBackgroundService();
+  if (await service.isRunning()) return;
+
+  _serviceStartInFlight = true;
+  try {
+    await service.startService();
+  } finally {
+    _serviceStartInFlight = false;
+  }
+}
+
+Future<void> stopBackgroundTimerService() async {
+  if (kIsWeb) return;
+  FlutterBackgroundService().invoke('stopService');
 }
 
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
-  // --- STATE INITIALIZATION ---
   int currentSeconds = 0;
-  String category = 'Focus';
+  String category = '未命名項目';
   bool isRunning = false;
+  bool isTimerActive = false;
+  String timerStateLabel = '計時準備中';
+  int? timerStartedAtEpochMs;
+  String generationId = 'background-initial';
+  String? lastNotificationSignature;
 
   final prefs = await SharedPreferences.getInstance();
-  
-  // HANDOFF LOGIC: Try to inherit state from the last UI session
   final handoffRaw = prefs.getString('bg_handoff_state');
   if (handoffRaw != null) {
     try {
-      final Map<String, dynamic> data = jsonDecode(handoffRaw);
-      currentSeconds = data['seconds'] ?? 0;
-      category = data['category'] ?? 'Focus';
-      isRunning = data['isRunning'] ?? false;
-      debugPrint('BackgroundService: Inherited state - ${currentSeconds}s, $category, running: $isRunning');
+      final data = jsonDecode(handoffRaw) as Map<String, dynamic>;
+      currentSeconds = data['seconds'] as int? ?? 0;
+      category = data['category'] as String? ?? category;
+      isRunning = data['isRunning'] as bool? ?? false;
+      isTimerActive = data['isTimerActive'] as bool? ?? (isRunning || currentSeconds > 0);
+      timerStateLabel = data['timerStateLabel'] as String? ??
+          (isRunning ? '正在計時' : (currentSeconds > 0 ? '計時已暫停' : '計時準備中'));
+      timerStartedAtEpochMs = data['timerStartedAtEpochMs'] as int?;
+      generationId = data['generationId']?.toString() ?? generationId;
     } catch (e) {
-      debugPrint('BackgroundService: Error decoding handoff state: $e');
+      debugPrint('TimerStateDebug source=onStart finalAction=handoff-decode-failed error=$e');
     }
   }
 
-  int pausedSeconds = 0;
-  const int autoStopTimeout = 30 * 60; // 30 minutes
-
-  // Define functions FIRST to avoid declaration order issues
-  void updateNotification(int current, String cat, bool running) {
-    if (service is AndroidServiceInstance) {
-      final hours = current ~/ 3600;
-      final minutes = (current % 3600) ~/ 60;
-      final seconds = current % 60;
-      final timeStr = '${hours > 0 ? '$hours:' : ''}${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-      final title = running ? '正在計時: $cat' : '計時已暫停: $cat';
-      final content = '累計時間: $timeStr';
-
-      // Fallback: always update the foreground service notification (no action buttons,
-      // but guaranteed to work even when the main app is killed).
-      service.setForegroundNotificationInfo(title: title, content: content);
-
-      // Relay to main app, which calls Kotlin TimerNotificationManager to show
-      // the notification with proper PendingIntent action buttons.
-      service.invoke('updateNotification', {
-        'title': title,
-        'content': content,
-        'isRunning': running,
-      });
+  String formatClock(int seconds) {
+    final safeSeconds = seconds < 0 ? 0 : seconds;
+    final hours = safeSeconds ~/ 3600;
+    final minutes = (safeSeconds % 3600) ~/ 60;
+    final secs = safeSeconds % 60;
+    if (hours > 0) {
+      return '$hours:${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
     }
+    return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
   }
 
-  
+  _TimerNotificationSnapshot buildSnapshot() {
+    final content = isRunning
+        ? '$category｜${formatClock(currentSeconds)}'
+        : '$timerStateLabel｜${formatClock(currentSeconds)}';
+    return _TimerNotificationSnapshot(
+      serviceTitle: '計時器',
+      serviceContent: content,
+      timerCategory: category,
+      timerStateLabel: timerStateLabel,
+      isRunning: isRunning,
+      isTimerActive: isTimerActive,
+      timerStartedAtEpochMs: timerStartedAtEpochMs,
+      generationId: generationId,
+    );
+  }
+
+  void publish({bool force = false}) {
+    if (service is! AndroidServiceInstance) return;
+    final snapshot = buildSnapshot();
+    if (!force && snapshot.signature == lastNotificationSignature) return;
+
+    service.setForegroundNotificationInfo(
+      title: snapshot.serviceTitle,
+      content: snapshot.serviceContent,
+    );
+    service.invoke('updateNotification', {
+      'title': snapshot.serviceTitle,
+      'content': snapshot.serviceContent,
+      'timerCategory': snapshot.timerCategory,
+      'timerStateLabel': snapshot.timerStateLabel,
+      'isRunning': snapshot.isRunning,
+      'isTimerActive': snapshot.isTimerActive,
+      'timerStartedAtEpochMs': snapshot.timerStartedAtEpochMs,
+      'generationId': snapshot.generationId,
+    });
+    lastNotificationSignature = snapshot.signature;
+  }
+
   void updateWidget(int current, String cat) {
-    final hours = current ~/ 3600;
-    final minutes = (current % 3600) ~/ 60;
-    final seconds = current % 60;
-    final timeStr = '${hours > 0 ? '$hours:' : ''}${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-
-    if (kIsWeb) return; // HomeWidget is not supported on Web
+    if (kIsWeb) return;
     try {
       HomeWidget.saveWidgetData<String>('task_name', cat);
-      HomeWidget.saveWidgetData<String>('timer_text', timeStr);
+      HomeWidget.saveWidgetData<String>('timer_text', formatClock(current));
       HomeWidget.updateWidget(
         qualifiedAndroidName: 'com.example.time_tracker.MasterWidgetProvider',
       );
     } catch (e) {
-      debugPrint('BackgroundService: Widget update failed: $e');
+      debugPrint('TimerStateDebug source=updateWidget finalAction=failed error=$e');
     }
   }
 
-  void setRunning(bool running) {
-    isRunning = running;
-    if (isRunning) pausedSeconds = 0; // Reset pause timer
-    updateNotification(currentSeconds, category, isRunning);
+  void emitStatus(String source) {
     service.invoke('statusChange', {
+      'source': source,
       'isRunning': isRunning,
       'currentElapsed': currentSeconds,
+      'generationId': generationId,
     });
   }
 
-  // --- Master Watchdog Timer (Always Online) ---
-  // This timer handles BOTH counting and Atomic Prefs Bridge polling.
-  Timer.periodic(const Duration(seconds: 1), (t) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.reload(); // Force re-read from disk; cross-isolate writes are not visible otherwise.
-    final pendingAction = prefs.getString('pending_timer_action');
-    
+  void applyReset(String source, {String? nextGenerationId}) {
+    currentSeconds = 0;
+    isRunning = false;
+    isTimerActive = false;
+    timerStateLabel = '計時準備中';
+    timerStartedAtEpochMs = null;
+    if (nextGenerationId != null && nextGenerationId.isNotEmpty) {
+      generationId = nextGenerationId;
+    }
+    debugPrint(
+      'TimerStateDebug source=$source generationId=$generationId elapsed=$currentSeconds '
+      'isRunning=$isRunning finalAction=background-reset',
+    );
+    publish(force: true);
+    emitStatus(source);
+  }
+
+  Timer.periodic(const Duration(seconds: 1), (timer) async {
+    final currentPrefs = await SharedPreferences.getInstance();
+    await currentPrefs.reload();
+    final pendingAction = currentPrefs.getString('pending_timer_action');
+
     if (pendingAction != null) {
-      debugPrint('BackgroundService: Master Watchdog picked up action: $pendingAction');
-      await prefs.remove('pending_timer_action');
+      await currentPrefs.remove('pending_timer_action');
       if (pendingAction == 'pause') {
-        setRunning(false);
+        isRunning = false;
+        timerStateLabel = currentSeconds > 0 ? '計時已暫停' : '計時準備中';
+        timerStartedAtEpochMs = null;
+        publish(force: true);
+        emitStatus('notification-pause');
       } else if (pendingAction == 'resume') {
-        setRunning(true);
+        isRunning = true;
+        isTimerActive = true;
+        timerStateLabel = '正在計時';
+        timerStartedAtEpochMs =
+            DateTime.now().millisecondsSinceEpoch - (currentSeconds * 1000);
+        publish(force: true);
+        emitStatus('notification-resume');
       } else if (pendingAction == 'stop') {
-        service.invoke('stopFromNotification');
+        service.invoke('stopFromNotification', {
+          'generationId': generationId,
+        });
         service.stopSelf();
+        timer.cancel();
         return;
       }
     }
 
     if (isRunning) {
       currentSeconds++;
-      pausedSeconds = 0;
-      updateNotification(currentSeconds, category, isRunning);
-      updateWidget(currentSeconds, category);
-      service.invoke('update', {
-        'currentElapsed': currentSeconds,
-        'category': category,
-      });
-    } else {
-      pausedSeconds++;
-      // AUTO-STOP: If paused for too long, kill the service to avoid "ghost" status bar
-      if (pausedSeconds >= autoStopTimeout) {
-        debugPrint('BackgroundService: Paused timeout reached. Stopping service...');
-        service.stopSelf();
-        return;
-      }
-      updateNotification(currentSeconds, category, isRunning);
       updateWidget(currentSeconds, category);
     }
   });
 
-  // INITIAL STATE
-  updateNotification(currentSeconds, category, isRunning);
+  publish(force: true);
   updateWidget(currentSeconds, category);
 
   service.on('setTimerData').listen((event) {
-    if (event != null) {
-      if (event['seconds'] != null) currentSeconds = event['seconds'];
-      if (event['category'] != null) category = event['category'];
-      bool? newIsRunning = event['isRunning'];
-      if (newIsRunning != null) setRunning(newIsRunning);
-      else updateNotification(currentSeconds, category, isRunning);
+    if (event == null) return;
+
+    final incomingGenerationId =
+        event['generationId']?.toString() ?? generationId;
+    generationId = incomingGenerationId;
+    currentSeconds = event['seconds'] as int? ?? currentSeconds;
+    category = event['category'] as String? ?? category;
+    isRunning = event['isRunning'] as bool? ?? isRunning;
+    isTimerActive = event['isTimerActive'] as bool? ?? (isRunning || currentSeconds > 0);
+    timerStateLabel = event['timerStateLabel'] as String? ??
+        (isRunning ? '正在計時' : (currentSeconds > 0 ? '計時已暫停' : '計時準備中'));
+    timerStartedAtEpochMs = event['timerStartedAtEpochMs'] as int?;
+
+    publish(force: event['force'] as bool? ?? true);
+  });
+
+  service.on('setNotificationSnapshot').listen((event) {
+    if (event == null) return;
+
+    generationId = event['generationId']?.toString() ?? generationId;
+    if (event['timerCategory'] != null) {
+      category = event['timerCategory'] as String;
     }
+    if (event['timerStateLabel'] != null) {
+      timerStateLabel = event['timerStateLabel'] as String;
+    }
+    if (event['isRunning'] != null) {
+      isRunning = event['isRunning'] as bool;
+    }
+    if (event['isTimerActive'] != null) {
+      isTimerActive = event['isTimerActive'] as bool;
+    }
+    timerStartedAtEpochMs = event['timerStartedAtEpochMs'] as int?;
+    publish(force: event['force'] as bool? ?? false);
+  });
+
+  service.on('clearNotificationSnapshot').listen((event) {
+    applyReset(
+      'clearNotificationSnapshot',
+      nextGenerationId: event?['generationId']?.toString(),
+    );
   });
 
   service.on('notificationAction').listen((event) {
     final action = event?['action'];
-    if (action == 'pause') setRunning(false);
-    else if (action == 'resume') setRunning(true);
-    else if (action == 'stop') {
-      service.invoke('stopFromNotification');
+    if (action == 'pause') {
+      isRunning = false;
+      timerStateLabel = currentSeconds > 0 ? '計時已暫停' : '計時準備中';
+      timerStartedAtEpochMs = null;
+      publish(force: true);
+      emitStatus('notificationAction-pause');
+    } else if (action == 'resume') {
+      isRunning = true;
+      isTimerActive = true;
+      timerStateLabel = '正在計時';
+      timerStartedAtEpochMs =
+          DateTime.now().millisecondsSinceEpoch - (currentSeconds * 1000);
+      publish(force: true);
+      emitStatus('notificationAction-resume');
+    } else if (action == 'stop') {
+      service.invoke('stopFromNotification', {
+        'generationId': generationId,
+      });
       service.stopSelf();
     }
   });
 
   service.on('requestSync').listen((event) {
-    service.invoke('statusChange', {
-      'isRunning': isRunning,
-      'currentElapsed': currentSeconds,
-    });
+    emitStatus('requestSync');
+  });
+
+  service.on('resetTimerState').listen((event) async {
+    final nextGenerationId = event?['generationId']?.toString();
+    final currentPrefs = await SharedPreferences.getInstance();
+    await currentPrefs.remove('bg_handoff_state');
+    await currentPrefs.remove('pending_timer_action');
+    applyReset('resetTimerState', nextGenerationId: nextGenerationId);
   });
 
   service.on('stopService').listen((event) async {
-    final p = await SharedPreferences.getInstance();
-    await p.remove('bg_handoff_state'); // Clear on explicit stop
+    final currentPrefs = await SharedPreferences.getInstance();
+    await currentPrefs.remove('bg_handoff_state');
+    await currentPrefs.remove('pending_timer_action');
     service.stopSelf();
   });
 }
